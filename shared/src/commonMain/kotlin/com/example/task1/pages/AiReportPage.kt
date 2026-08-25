@@ -61,11 +61,11 @@ fun AiReportScreen() {
         if (analysis != null && stock != null) {
             MiniStockCard(stock)
             Spacer(modifier = Modifier.height(16.dp))
-            TrendSection(analysis!!)
+            TrendSection(analysis!!, shown = true)
             Spacer(modifier = Modifier.height(16.dp))
-            RiskSection(analysis!!)
+            RiskSection(analysis!!, shown = true)
             Spacer(modifier = Modifier.height(16.dp))
-            BuySection(analysis!!)
+            BuySection(analysis!!, shown = true)
         }
     }
 }

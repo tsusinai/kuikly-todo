@@ -9,8 +9,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import com.example.task1.base.BridgeModule
 import com.example.task1.components.AiBottomBar
-import com.tencent.kuikly.compose.animation.core.animateFloatAsState
-import com.tencent.kuikly.compose.animation.core.tween
 import com.example.task1.components.AiBottomSheet
 import com.example.task1.components.BottomNav
 import com.example.task1.components.MarketOverviewBar
@@ -22,10 +20,11 @@ import com.example.task1.data.StockItem
 import com.example.task1.theme.AppColors
 import com.tencent.kuikly.compose.ComposeContainer
 import com.tencent.kuikly.compose.setContent
+import com.tencent.kuikly.compose.animation.core.animateFloatAsState
+import com.tencent.kuikly.compose.animation.core.tween
 import com.tencent.kuikly.compose.foundation.background
 import com.tencent.kuikly.compose.foundation.border
 import com.tencent.kuikly.compose.foundation.clickable
-import com.tencent.kuikly.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import com.tencent.kuikly.compose.foundation.gestures.detectTapGestures
 import com.tencent.kuikly.compose.foundation.layout.Box
 import com.tencent.kuikly.compose.foundation.layout.Column
@@ -34,7 +33,6 @@ import com.tencent.kuikly.compose.foundation.layout.Spacer
 import com.tencent.kuikly.compose.foundation.layout.fillMaxSize
 import com.tencent.kuikly.compose.foundation.layout.fillMaxWidth
 import com.tencent.kuikly.compose.foundation.layout.height
-import com.tencent.kuikly.compose.foundation.layout.offset
 import com.tencent.kuikly.compose.foundation.layout.padding
 import com.tencent.kuikly.compose.foundation.lazy.LazyColumn
 import com.tencent.kuikly.compose.foundation.lazy.items
@@ -43,35 +41,31 @@ import com.tencent.kuikly.compose.material3.ModalBottomSheet
 import com.tencent.kuikly.compose.material3.Text
 import com.tencent.kuikly.compose.ui.Alignment
 import com.tencent.kuikly.compose.ui.Modifier
-import com.tencent.kuikly.compose.ui.geometry.Offset
-import com.tencent.kuikly.compose.ui.geometry.Rect
 import com.tencent.kuikly.compose.ui.draw.scale
 import com.tencent.kuikly.compose.ui.graphics.Color
 import com.tencent.kuikly.compose.ui.input.pointer.pointerInput
-import com.tencent.kuikly.compose.ui.layout.boundsInRoot
-import com.tencent.kuikly.compose.ui.layout.onGloballyPositioned
 import com.tencent.kuikly.compose.ui.platform.LocalActivity
-import com.tencent.kuikly.compose.ui.unit.IntOffset
+import com.tencent.kuikly.compose.ui.platform.LocalConfiguration
 import com.tencent.kuikly.compose.ui.unit.dp
 import com.tencent.kuikly.compose.ui.unit.sp
 import com.tencent.kuikly.core.annotations.Page
 import com.tencent.kuikly.core.module.Module
 import com.tencent.kuikly.core.module.RouterModule
 import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
-import kotlinx.coroutines.FlowPreview
-import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
  * 行情 / 自选列表页（主屏）。
  *
  * 通过路由名 "watchlist" 注册，布局自顶向下为：
- *  - 顶部 header：搜索框 + Tab 栏（自选/全球/港股/…）
+ *  - 顶部 header：搜索框 + Tab 栏（自选/全球/港股/…），背景 HeaderBg 延伸到状态栏顶端
  *  - 主体 LazyColumn：市场大盘摘要（MarketOverviewBar）+ 股票卡片列表（StockCard）
- *  - 底部固定区域：「分析智窗」栏（AiBottomBar）+ 底部导航（BottomNav）
+ *  - 底部固定区域：「分析智窗」栏（AiBottomBar，常驻两态：思考中→全盘建议）+ 底部导航（BottomNav）
  *  - 叠加的 ModalBottomSheet：AI 分析弹层（AiBottomSheet）
  *
- * 数据来自内置的 SampleStockApi；点击卡片跳股票详情，点击「分析智窗」/卡片上的 AI 入口弹出分析。
+ * 数据来自内置的 SampleStockApi；点击卡片选中/展开（仅重点股 compact 露建议），
+ * 展开后点建议行弹出单股 AI 分析；点击「查看详情」跳股票详情页。
  */
 @Page("watchlist")
 class WatchlistPage : ComposeContainer() {
@@ -97,36 +91,21 @@ fun WatchlistScreen() {
     var showSheet by remember { mutableStateOf(false) }
     var activeStock by remember { mutableStateOf<StockItem?>(null) }
     var analysis by remember { mutableStateOf<AiAnalysis?>(null) }
-    // 当前被选中（展开）的卡片 id；单击卡片选中，拖拽也会同步选中
+    // 当前被选中（展开）的卡片 id；单击卡片选中，点已选中的收回
     var selectedId by remember { mutableStateOf<String?>(null) }
-    // 拖拽相关：记录「分析智窗」的窗口 Rect、被拖拽的卡片、拖拽位移（尽力而为）
-    var barRect by remember { mutableStateOf<Rect?>(null) }
-    var draggingStock by remember { mutableStateOf<StockItem?>(null) }
-    var dragDelta by remember { mutableStateOf(Offset.Zero) }
-    // 拖拽中的卡片是否已「接触」分析智窗：驱动放大动画 + 触觉反馈
-    var targetBar by remember { mutableStateOf(false) }
+    // 「分析智窗」常驻两态：thinking「思考中……」→ advice「全盘建议」
+    var thinking by remember { mutableStateOf(true) }
+    var advice by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
     val activity = LocalActivity.current
-
-    // 卡片中心（初始 root 位置 + 累计位移）是否落入「分析智窗」窗口
-    fun hitBar(b: Rect?, bar: Rect?, d: Offset): Boolean {
-        if (b == null || bar == null) return false
-        val cx = b.left + d.x + b.width / 2
-        val cy = b.top + d.y + b.height / 2
-        return cx >= bar.left && cx <= bar.right && cy >= bar.top && cy <= bar.bottom
+    // 分档触觉：keyboard/medium/light 由 BridgeModule.vibrateShort(type) 支持（现只用默认 heavy）
+    fun haptic(type: String) {
+        activity.acquireModule<BridgeModule>(BridgeModule.MODULE_NAME).vibrateShort(type)
     }
 
-    // 「分析智窗」接触时的放大动画
-    val barScale by animateFloatAsState(
-        targetValue = if (targetBar) 1.06f else 1f,
-        animationSpec = tween(150),
-    )
-
-    // 进入页面时加载自选列表（内置样例数据，后续可切换真实行情）
-    LaunchedEffect(Unit) { stocks = SampleStockApi.fetchWatchlist() }
-
-    // 打开 AI 分析弹层：先取分析数据，再弹出
+    // 单击卡片：展开卡片的选区（点已选中的收回）；按压缩放动画由 cardPressed 驱动
     fun openPanel(stock: StockItem) {
+        haptic("light")   // 弹层打开的轻震
         activeStock = stock
         scope.launch {
             analysis = SampleStockApi.fetchAiAnalysis(stock.code)
@@ -134,7 +113,7 @@ fun WatchlistScreen() {
         }
     }
 
-    // 点击卡片：携带股票 code 跳转到股票详情页
+    // 点击卡片「查看详情」：携带股票 code 跳转到股票详情页
     fun openDetail(stock: StockItem) {
         val pj = JSONObject()
         pj.put("code", stock.code)
@@ -147,9 +126,27 @@ fun WatchlistScreen() {
         activity.acquireModule<RouterModule>(RouterModule.MODULE_NAME).openPage("aiReport", pj)
     }
 
+    // 进入页面时加载自选列表；同时驱动智窗「思考中…… → 全盘建议」自动切换
+    LaunchedEffect(Unit) { stocks = SampleStockApi.fetchWatchlist() }
+    LaunchedEffect(Unit) {
+        thinking = true
+        delay(800)
+        advice = SampleStockApi.fetchGlobalAdvice()
+        thinking = false
+    }
+
+    // 顶部状态栏高度（dp）：让 HeaderBg 背景覆盖到状态栏顶端、内容避开状态栏
+    val statusBarHeight = LocalConfiguration.current.statusBarHeight
+
     Column(modifier = Modifier.fillMaxSize().background(AppColors.PageBg)) {
-        // 顶部 header：搜索框 + Tab 栏（该区域固定不随列表滚动）
-        Column(modifier = Modifier.background(AppColors.HeaderBg).padding(horizontal = 10.dp).padding(top = 16.dp).padding(bottom = 8.dp)) {
+        // 顶部 header：搜索框 + Tab 栏（该区域固定不随列表滚动；背景延伸进状态栏）
+        Column(
+            modifier = Modifier
+                .background(AppColors.HeaderBg)
+                .padding(top = (statusBarHeight + 16f).dp)
+                .padding(horizontal = 10.dp)
+                .padding(bottom = 8.dp),
+        ) {
             Row(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 // 搜索框：空白色圆角胶囊 + 右侧「搜索」动作（设计稿 18:241 = 白色圆角矩形 + 右侧「搜索」文字，无占位符/无图标）
                 Box(
@@ -170,53 +167,21 @@ fun WatchlistScreen() {
             item { MarketOverviewBar() }
             item { Spacer(modifier = Modifier.height(10.dp)) }
             items(stocks, key = { it.id }) { item ->
-                // 每张卡片：在布局回调里解析 root 坐标（boundsInRoot 已实现；boundsInWindow 在此版本恒抛 segqwe，必须避开）。
-                // offset 实现拖拽时的视觉位移；pointerInput 以 item 为 key 避免 LazyList 复用错乱。
-                var base by remember { mutableStateOf<Rect?>(null) }
+                // 每张卡片：单击选中/取消（仅一张展开）；长按拖拽入口已移除
+                var cardPressed by remember { mutableStateOf(false) }
+                val cardScale by animateFloatAsState(if (cardPressed) 0.985f else 1f, tween(120))
                 Box(
                     modifier = Modifier
-                        .onGloballyPositioned { it ->
-                            // 仅在该卡片未被拖拽时更新：冻结在 offset=0 的原始位置，避免与 offset+dragDelta 重复计位
-                            if (draggingStock?.id != item.id) {
-                                base = try { it.boundsInRoot() } catch (e: Throwable) { base }
-                            }
-                        }
-                        .offset {
-                            if (draggingStock?.id == item.id) IntOffset(dragDelta.x.roundToInt(), dragDelta.y.roundToInt())
-                            else IntOffset(0, 0)
-                        }
+                        .scale(cardScale)
                         .pointerInput(item) {
-                            detectTapGestures(onTap = { selectedId = item.id })
-                        }
-                        .pointerInput(item) {
-                            detectDragGesturesAfterLongPress(
-                                onDragStart = {
-                                    draggingStock = item
-                                    selectedId = item.id   // 拖拽同步选中
-                                    dragDelta = Offset.Zero
-                                    targetBar = false
-                                },
-                                onDrag = { _, amount ->
-                                    dragDelta += amount
-                                    // 卡片中心接触「分析智窗」：进入瞬间触发一次震动，并持续驱动放大动画
-                                    val hit = hitBar(base, barRect, dragDelta)
-                                    if (hit && !targetBar) {
-                                        activity.acquireModule<BridgeModule>(BridgeModule.MODULE_NAME).vibrateShort()
-                                    }
-                                    targetBar = hit
-                                },
-                                onDragEnd = {
-                                    // 命中判断：卡片中心（初始 root 位置 + 累计位移）是否落在「分析智窗」的窗口范围内
-                                    if (hitBar(base, barRect, dragDelta)) openPanel(item)
-                                    draggingStock = null
-                                    targetBar = false
-                                },
-                                onDragCancel = {
-                                    draggingStock = null
-                                    targetBar = false
+                            detectTapGestures(
+                                onPress = { cardPressed = true; tryAwaitRelease(); cardPressed = false },
+                                onTap = {
+                                    selectedId = if (selectedId == item.id) null else item.id
+                                    haptic("light")   // 点选轻震
                                 },
                             )
-                        }
+                        },
                 ) {
                     StockCard(
                         item = item,
@@ -229,18 +194,11 @@ fun WatchlistScreen() {
             item { Spacer(modifier = Modifier.height(90.dp)) }
         }
 
-        // 底部固定区域：「分析智窗」栏（记录其窗口坐标供拖拽命中）+ 底部导航
+        // 底部固定区域：「分析智窗」栏（常驻：思考中→全盘建议）+ 底部导航
         Column(modifier = Modifier.background(AppColors.PageBg)) {
             AiBottomBar(
-                onClick = {
-                    (stocks.find { it.id == selectedId } ?: stocks.firstOrNull())?.let { openPanel(it) }
-                },
-                showSparkline = selectedId != null || draggingStock != null || targetBar,
-                // 用 boundsInRoot 解析窗口坐标（与卡片命中判定同一 root 坐标系）；静态栏无 offset，无需 guard。
-                // scale 放在 onGloballyPositioned 之后（内层）：布局坐标不随缩放改变，命中区域保持稳定，仅做视觉放大。
-                modifier = Modifier.onGloballyPositioned { it ->
-                    barRect = try { it.boundsInRoot() } catch (e: Throwable) { barRect }
-                }.scale(barScale),
+                advice = advice,
+                thinking = thinking,
             )
             BottomNav(selected = "行情")
         }
