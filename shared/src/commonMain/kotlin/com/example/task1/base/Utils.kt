@@ -62,4 +62,50 @@ internal object Utils : BaseObject() {
         return "$whole.$fracStr%"
     }
 
+    /** 总市值(元) -> "2.30万亿" / "1.63万亿" / "5800.0亿"。 */
+    fun formatMarketCapYuan(yuan: Long): String {
+        val trillion = 1_0000_0000_0000L   // 1 万亿(元)
+        val hundredMillion = 1_0000_0000L   // 1 亿(元)
+        return when {
+            yuan >= trillion -> formatDecimal(yuan / trillion.toDouble(), 2) + "万亿"
+            yuan >= hundredMillion -> formatDecimal(yuan / hundredMillion.toDouble(), 1) + "亿"
+            else -> "${yuan}元"
+        }
+    }
+
+    /** 市盈率 -> 固定两位小数，如 32.0 -> "32.00"。 */
+    fun formatDouble2(v: Double): String {
+        val scaled = (v * 100).roundToLong()
+        val whole = scaled / 100
+        val frac = (scaled % 100).toInt()
+        val fracStr = if (frac < 10) "0$frac" else "$frac"
+        return "$whole.$fracStr"
+    }
+
+    /** 占比/比例 -> 不带正号的百分比，最多两位小数、末尾去零：18.8->"18.8%"、0.22->"0.22%"、5->"5%"。 */
+    fun formatPercentNoSign(percent: Double): String {
+        val scaled = (percent * 100).roundToLong()   // 万分位
+        val whole = scaled / 100
+        val hundredth = (scaled % 100).toInt()
+        return when {
+            hundredth == 0 -> "$whole%"
+            hundredth % 10 == 0 -> "$whole.${hundredth / 10}%"
+            else -> {
+                val fracStr = if (hundredth < 10) "0$hundredth" else "$hundredth"
+                "$whole.$fracStr%"
+            }
+        }
+    }
+
+    /** 按 [decimals] 位小数格式化浮点数（用于市值展示）。 */
+    private fun formatDecimal(value: Double, decimals: Int): String {
+        if (decimals <= 0) return value.roundToLong().toString()
+        var factor = 1L
+        repeat(decimals) { factor *= 10 }
+        val scaled = (value * factor).roundToLong()
+        val whole = scaled / factor
+        val frac = (scaled % factor).toInt()
+        return "$whole.${frac.toString().padStart(decimals, '0')}"
+    }
+
 }

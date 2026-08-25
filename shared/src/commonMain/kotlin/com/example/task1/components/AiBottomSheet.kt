@@ -19,15 +19,9 @@ import com.tencent.kuikly.compose.foundation.layout.padding
 import com.tencent.kuikly.compose.foundation.layout.size
 import com.tencent.kuikly.compose.foundation.layout.width
 import com.tencent.kuikly.compose.foundation.shape.RoundedCornerShape
-import com.tencent.kuikly.compose.foundation.Canvas
 import com.tencent.kuikly.compose.material3.Text
 import com.tencent.kuikly.compose.ui.Alignment
-import com.tencent.kuikly.compose.ui.graphics.Path
-import com.tencent.kuikly.compose.ui.graphics.StrokeCap
-import com.tencent.kuikly.compose.ui.graphics.StrokeJoin
-import com.tencent.kuikly.compose.ui.graphics.drawscope.Stroke
 import com.tencent.kuikly.compose.ui.Modifier
-import com.tencent.kuikly.compose.ui.graphics.Brush
 import com.tencent.kuikly.compose.ui.graphics.Color
 import com.tencent.kuikly.compose.ui.text.font.FontWeight
 import com.tencent.kuikly.compose.ui.unit.dp
@@ -103,7 +97,7 @@ fun TrendSection(analysis: AiAnalysis) {
             Text(text = "MACD金叉形成", color = AppColors.Green, fontSize = 13.sp)
         }
         Spacer(modifier = Modifier.height(8.dp))
-        Sparkline()
+        RiseSparkline(modifier = Modifier.fillMaxWidth().height(48.dp))
         Spacer(modifier = Modifier.height(12.dp))
         HorizontalDivider()
         Spacer(modifier = Modifier.height(12.dp))
@@ -169,51 +163,6 @@ private fun GaugeSegment(modifier: Modifier, color: Color, showDot: Boolean = fa
     Box(modifier = modifier.height(8.dp).background(color, RoundedCornerShape(4.dp)), contentAlignment = Alignment.Center) {
         if (showDot) {
             Box(modifier = Modifier.size(13.dp).background(Color.White, RoundedCornerShape(7.dp)))
-        }
-    }
-}
-
-@Composable
-private fun Sparkline() {
-    // 涨势曲线：改用原生 Canvas(自绘画布) 映射为 Compose 组件绘制，替代烘底图片 sparkline.png。
-    RiseSparkline(modifier = Modifier.fillMaxWidth().height(48.dp))
-}
-
-/**
- * 用 Kuikly 原生 Canvas(自绘画布) 绘制一条平滑上升的红色涨势曲线。
- * 通过 MakeKuiklyComposeNode 将 core/views/CanvasView 映射为 Compose 可用组件，
- * 在 drawCallback 里用 H5 标准的 CanvasContext API（beginPath/moveTo/bezierCurveTo/stroke）绘制。
- */
-@Composable
-private fun RiseSparkline(modifier: Modifier = Modifier) {
-    // Kuikly Compose 内置 Canvas(自绘画布)：底层仍是 CanvasView，经 drawBehind/DrawScope 走 Compose 绘制管线，
-    // 渲染稳定（此前用 MakeKuiklyComposeNode+CanvasView.drawCallback 的桥接路径在真机不触发绘制）。
-    Canvas(modifier = modifier.fillMaxWidth().height(48.dp)) {
-        val w = size.width
-        val h = size.height
-        if (w > 0f && h > 0f) {
-            val padX = w * 0.05f
-            val top = h * 0.14f
-            val bottom = h * 0.88f
-            // y(t)：t 从 0(顶部) 到 1(底部) 的线性插值
-            fun y(t: Float) = top + (bottom - top) * t
-
-            val path = Path().apply {
-                moveTo(padX, y(1f))
-                // 第一段：从左下缓升
-                cubicTo(w * 0.26f, y(1f), w * 0.34f, y(0.74f), w * 0.46f, y(0.62f))
-                // 第二段：快速拉升到右上方
-                cubicTo(w * 0.60f, y(0.50f), w * 0.74f, y(0.12f), w - padX, y(0.30f))
-            }
-            drawPath(
-                brush = Brush.linearGradient(listOf(AppColors.RiseRed, AppColors.RiseRed)),   // 红色 #DF0004
-                path = path,
-                style = Stroke(
-                    width = (h * 0.045f).coerceIn(2f, 4f),
-                    cap = StrokeCap.Round,
-                    join = StrokeJoin.Round,
-                ),
-            )
         }
     }
 }

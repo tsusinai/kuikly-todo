@@ -97,6 +97,8 @@ fun WatchlistScreen() {
     var showSheet by remember { mutableStateOf(false) }
     var activeStock by remember { mutableStateOf<StockItem?>(null) }
     var analysis by remember { mutableStateOf<AiAnalysis?>(null) }
+    // 当前被选中（展开）的卡片 id；单击卡片选中，拖拽也会同步选中
+    var selectedId by remember { mutableStateOf<String?>(null) }
     // 拖拽相关：记录「分析智窗」的窗口 Rect、被拖拽的卡片、拖拽位移（尽力而为）
     var barRect by remember { mutableStateOf<Rect?>(null) }
     var draggingStock by remember { mutableStateOf<StockItem?>(null) }
@@ -184,12 +186,13 @@ fun WatchlistScreen() {
                             else IntOffset(0, 0)
                         }
                         .pointerInput(item) {
-                            detectTapGestures(onTap = { openDetail(item) })
+                            detectTapGestures(onTap = { selectedId = item.id })
                         }
                         .pointerInput(item) {
                             detectDragGesturesAfterLongPress(
                                 onDragStart = {
                                     draggingStock = item
+                                    selectedId = item.id   // 拖拽同步选中
                                     dragDelta = Offset.Zero
                                     targetBar = false
                                 },
@@ -215,7 +218,12 @@ fun WatchlistScreen() {
                             )
                         }
                 ) {
-                    StockCard(item, onOpenAi = { openPanel(item) })
+                    StockCard(
+                        item = item,
+                        selected = selectedId == item.id,
+                        onOpenAi = { openPanel(item) },
+                        onEnterDetail = { openDetail(item) },
+                    )
                 }
             }
             item { Spacer(modifier = Modifier.height(90.dp)) }
@@ -224,7 +232,10 @@ fun WatchlistScreen() {
         // 底部固定区域：「分析智窗」栏（记录其窗口坐标供拖拽命中）+ 底部导航
         Column(modifier = Modifier.background(AppColors.PageBg)) {
             AiBottomBar(
-                onClick = { stocks.firstOrNull()?.let { openPanel(it) } },
+                onClick = {
+                    (stocks.find { it.id == selectedId } ?: stocks.firstOrNull())?.let { openPanel(it) }
+                },
+                showSparkline = selectedId != null || draggingStock != null || targetBar,
                 // 用 boundsInRoot 解析窗口坐标（与卡片命中判定同一 root 坐标系）；静态栏无 offset，无需 guard。
                 // scale 放在 onGloballyPositioned 之后（内层）：布局坐标不随缩放改变，命中区域保持稳定，仅做视觉放大。
                 modifier = Modifier.onGloballyPositioned { it ->

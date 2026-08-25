@@ -4,6 +4,9 @@ import androidx.compose.runtime.Composable
 import com.example.task1.base.Utils
 import com.example.task1.data.StockItem
 import com.example.task1.theme.AppColors
+import com.tencent.kuikly.compose.animation.AnimatedVisibility
+import com.tencent.kuikly.compose.animation.expandVertically
+import com.tencent.kuikly.compose.animation.shrinkVertically
 import com.tencent.kuikly.compose.foundation.background
 import com.tencent.kuikly.compose.foundation.border
 import com.tencent.kuikly.compose.foundation.clickable
@@ -27,8 +30,19 @@ import com.tencent.kuikly.compose.ui.text.style.TextOverflow
 import com.tencent.kuikly.compose.ui.unit.dp
 import com.tencent.kuikly.compose.ui.unit.sp
 
+/**
+ * 股票卡片。全卡统一行为（无 aiEnabled 区分）：单击在页面层被接成「选中」。
+ *
+ * [selected] 为 true 时：卡片边框高亮，并在 TopRow 下方用 AnimatedVisibility(expandVertically)
+ * 平滑展开详情块（aiBrief 推介 + 高/低/开 + 查看详情 ›）。否则仅呈现紧凑态（与原一致）。
+ */
 @Composable
-fun StockCard(item: StockItem, onOpenAi: () -> Unit) {
+fun StockCard(
+    item: StockItem,
+    selected: Boolean,
+    onOpenAi: () -> Unit,
+    onEnterDetail: () -> Unit,
+) {
     val cardShape = RoundedCornerShape(12.dp)
     Column(
         modifier = Modifier
@@ -36,13 +50,16 @@ fun StockCard(item: StockItem, onOpenAi: () -> Unit) {
             .padding(horizontal = 10.dp) // 卡片距屏幕边缘 10dp，与设计稿、沪深大盘摘要区对齐
             .padding(vertical = 5.dp)
             .background(Color.White, cardShape)
-            .border(1.dp, AppColors.Border, cardShape)
+            .border(1.dp, if (selected) AppColors.AiLight else AppColors.Border, cardShape)
             .padding(12.dp)
     ) {
         TopRow(item)
-        if (item.aiEnabled) {
-            Spacer(modifier = Modifier.height(10.dp))
-            AiRow(item, onOpenAi)
+        AnimatedVisibility(
+            visible = selected,
+            enter = expandVertically(),
+            exit = shrinkVertically(),
+        ) {
+            DetailBlock(item, onOpenAi, onEnterDetail)
         }
     }
 }
@@ -91,8 +108,23 @@ private fun ChangeBadge(changePct: Double) {
     }
 }
 
+/** 选中时展开的详情块：AI 推介 + 高/低/开 + 查看详情 ›。 */
 @Composable
-private fun AiRow(item: StockItem, onOpenAi: () -> Unit) {
+private fun DetailBlock(item: StockItem, onOpenAi: () -> Unit, onEnterDetail: () -> Unit) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        if (item.aiBrief.isNotBlank()) {
+            Spacer(modifier = Modifier.height(10.dp))
+            AiBriefRow(item, onOpenAi)
+        }
+        Spacer(modifier = Modifier.height(10.dp))
+        HighLowOpenRow(item)
+        Spacer(modifier = Modifier.height(10.dp))
+        DetailEntry(onEnterDetail)
+    }
+}
+
+@Composable
+private fun AiBriefRow(item: StockItem, onOpenAi: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -109,5 +141,34 @@ private fun AiRow(item: StockItem, onOpenAi: () -> Unit) {
         }
         Spacer(modifier = Modifier.width(8.dp))
         Text(text = item.aiBrief, color = AppColors.Green, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
+private fun HighLowOpenRow(item: StockItem) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(text = "高 ${Utils.formatPrice2(item.high)}", color = AppColors.RiseRed, fontSize = 12.sp)
+        Text(text = "低 ${Utils.formatPrice2(item.low)}", color = AppColors.Green, fontSize = 12.sp)
+        Text(text = "开 ${Utils.formatPrice2(item.open)}", color = AppColors.RiseRed, fontSize = 12.sp)
+    }
+}
+
+@Composable
+private fun DetailEntry(onEnterDetail: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onEnterDetail)
+            .padding(vertical = 2.dp),
+        horizontalArrangement = Arrangement.End,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(text = "查看详情", color = AppColors.MainText, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+        Spacer(modifier = Modifier.width(4.dp))
+        AppIcon("arrow-right", modifier = Modifier.size(14.dp))
     }
 }
