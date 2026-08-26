@@ -12,6 +12,7 @@ import com.example.task1.data.SampleStockApi
 import com.example.task1.data.StockItem
 import com.example.task1.theme.AppColors
 import com.tencent.kuikly.compose.ComposeContainer
+import com.tencent.kuikly.compose.foundation.Canvas
 import com.tencent.kuikly.compose.setContent
 import com.tencent.kuikly.compose.foundation.background
 import com.tencent.kuikly.compose.foundation.border
@@ -33,12 +34,14 @@ import com.tencent.kuikly.compose.material3.Text
 import com.tencent.kuikly.compose.ui.platform.LocalConfiguration
 import com.tencent.kuikly.compose.ui.Alignment
 import com.tencent.kuikly.compose.ui.Modifier
+import com.tencent.kuikly.compose.ui.geometry.Offset
 import com.tencent.kuikly.compose.ui.graphics.Color
 import com.tencent.kuikly.compose.ui.text.font.FontWeight
 import com.tencent.kuikly.compose.ui.text.style.TextOverflow
 import com.tencent.kuikly.compose.ui.unit.dp
 import com.tencent.kuikly.compose.ui.unit.sp
 import com.tencent.kuikly.core.annotations.Page
+import kotlinx.coroutines.FlowPreview
 
 /**
  * 股票详情页。
@@ -53,10 +56,10 @@ import com.tencent.kuikly.core.annotations.Page
 class StockDetailPage : ComposeContainer() {
     override fun willInit() {
         super.willInit()
-        // 进入页面时先把 Compose 内容设置到容器里
         setContent { StockDetailScreen() }
     }
 }
+
 
 @Composable
 fun StockDetailScreen() {
@@ -64,7 +67,9 @@ fun StockDetailScreen() {
     var selectedTab by remember { mutableStateOf("分时") }
     // 读取路由参数 code（页面传参，PagerManager.getCurrentPager().pageData.params）
     val code = LocalConfiguration.current.pageData.params.optString("code")
+
     LaunchedEffect(code) { stock = SampleStockApi.fetchStock(code) }
+
     val tabs = listOf("分时", "日K", "周K", "月K", "更多")
 
     LazyColumn(modifier = Modifier.fillMaxSize().background(AppColors.PageBg)) {
@@ -73,6 +78,8 @@ fun StockDetailScreen() {
             item { Header(item) }
             item { Spacer(modifier = Modifier.height(12.dp)) }
             item { PriceBlock(item) }
+            item { Spacer(modifier = Modifier.height(8.dp)) }
+            item { Divider() }
             item { Spacer(modifier = Modifier.height(16.dp)) }
             item { HighLowOpenBlock(item) }
             item { Spacer(modifier = Modifier.height(12.dp)) }
@@ -80,8 +87,11 @@ fun StockDetailScreen() {
             item { Spacer(modifier = Modifier.height(12.dp)) }
             item { EtfBlock(item) }
             item { Spacer(modifier = Modifier.height(12.dp)) }
+            item { Divider() }
+            item { Spacer(modifier = Modifier.height(8.dp)) }
             item { AiBlock(item) }
-            item { Spacer(modifier = Modifier.height(16.dp)) }
+            item { Spacer(modifier = Modifier.height(8.dp)) }
+            item { Divider() }
             item { TabRow(tabs = tabs, selectedTab = selectedTab, onSelect = { selectedTab = it }) }
             item { Spacer(modifier = Modifier.height(12.dp)) }
             item { ChartPlaceholder() }
@@ -95,7 +105,7 @@ fun StockDetailScreen() {
 @Composable
 private fun Header(item: StockItem) {
     Column(
-        modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+        modifier = Modifier.fillMaxWidth().background(color = AppColors.HeaderBg).padding(top = 16.dp, bottom = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(text = item.name, color = AppColors.MainText, fontSize = 22.sp, fontWeight = FontWeight.Bold)
@@ -175,6 +185,26 @@ private fun StatItem(label: String, value: String, valueColor: Color) {
 }
 
 @Composable
+private fun Divider() {
+    Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(1.dp)
+    ) {
+        val w = size.width
+        val h = size.height
+        if (w > 0f && h > 0f) {
+            drawLine(
+                strokeWidth = 0.4.dp.toPx(),
+                color = AppColors.Border,
+                start = Offset(0f, h / 2f),
+                end = Offset(w, h / 2f),
+            )
+        }
+    }
+}
+
+@Composable
 private fun EtfBlock(item: StockItem) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
@@ -208,7 +238,7 @@ private fun AiBlock(item: StockItem) {
 private fun TabRow(tabs: List<String>, selectedTab: String, onSelect: (String) -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
-        horizontalArrangement = Arrangement.spacedBy(20.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         tabs.forEach { tab ->
             val selected = tab == selectedTab

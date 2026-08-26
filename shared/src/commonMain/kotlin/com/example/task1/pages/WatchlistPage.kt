@@ -143,7 +143,7 @@ fun WatchlistScreen() {
         Column(
             modifier = Modifier
                 .background(AppColors.HeaderBg)
-                .padding(top = (statusBarHeight + 16f).dp)
+                .padding(top = (statusBarHeight + 8f).dp)
                 .padding(horizontal = 10.dp)
                 .padding(bottom = 8.dp),
         ) {
@@ -191,7 +191,7 @@ fun WatchlistScreen() {
                     )
                 }
             }
-            item { Spacer(modifier = Modifier.height(90.dp)) }
+            item { Spacer(modifier = Modifier.height(50.dp)) }
         }
 
         // 底部固定区域：「分析智窗」栏（常驻：思考中→全盘建议）+ 底部导航

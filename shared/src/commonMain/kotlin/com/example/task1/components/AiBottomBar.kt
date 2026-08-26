@@ -62,7 +62,6 @@ fun AiBottomBar(
                 Text(text = "思考中......", color = AppColors.SubGray, fontSize = 13.sp)
             } else {
                 Column(horizontalAlignment = Alignment.End) {
-                    Text(text = "全盘股票AI建议：", color = AppColors.MainText, fontSize = 13.sp)
                     Text(text = advice, color = AppColors.SubGray, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
             }
