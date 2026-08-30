@@ -199,6 +199,8 @@ fun WatchlistScreen() {
             AiBottomBar(
                 advice = advice,
                 thinking = thinking,
+                dimensionLabel = "全盘",
+                onLongPress = { /* Task 7: 呼出维度选择弹层 */ },
             )
             BottomNav(selected = "行情")
         }

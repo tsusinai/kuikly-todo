@@ -3,12 +3,14 @@ package com.example.task1.components
 import androidx.compose.runtime.Composable
 import com.example.task1.theme.AppColors
 import com.tencent.kuikly.compose.foundation.background
+import com.tencent.kuikly.compose.foundation.gestures.detectTapGestures
 import com.tencent.kuikly.compose.foundation.layout.Arrangement
 import com.tencent.kuikly.compose.foundation.layout.Box
 import com.tencent.kuikly.compose.foundation.layout.Column
 import com.tencent.kuikly.compose.foundation.layout.Row
 import com.tencent.kuikly.compose.foundation.layout.Spacer
 import com.tencent.kuikly.compose.foundation.layout.fillMaxWidth
+import com.tencent.kuikly.compose.foundation.layout.height
 import com.tencent.kuikly.compose.foundation.layout.padding
 import com.tencent.kuikly.compose.foundation.layout.size
 import com.tencent.kuikly.compose.foundation.layout.width
@@ -18,6 +20,7 @@ import com.tencent.kuikly.compose.ui.Alignment
 import com.tencent.kuikly.compose.ui.Modifier
 import com.tencent.kuikly.compose.ui.draw.shadow
 import com.tencent.kuikly.compose.ui.graphics.Color
+import com.tencent.kuikly.compose.ui.input.pointer.pointerInput
 import com.tencent.kuikly.compose.ui.text.font.FontWeight
 import com.tencent.kuikly.compose.ui.text.style.TextOverflow
 import com.tencent.kuikly.compose.ui.unit.dp
@@ -36,6 +39,8 @@ import com.tencent.kuikly.compose.ui.unit.sp
 fun AiBottomBar(
     advice: String,
     thinking: Boolean,
+    dimensionLabel: String,
+    onLongPress: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -44,7 +49,8 @@ fun AiBottomBar(
             .padding(horizontal = 8.dp)
             .shadow(2.dp, RoundedCornerShape(16.dp), clip = false)
             .background(Color.White, RoundedCornerShape(16.dp))
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .pointerInput(Unit) { detectTapGestures(onLongPress = { onLongPress() }) },
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -62,6 +68,8 @@ fun AiBottomBar(
                 Text(text = "思考中......", color = AppColors.SubGray, fontSize = 13.sp)
             } else {
                 Column(horizontalAlignment = Alignment.End) {
+                    Text(text = "全盘AI建议·$dimensionLabel", color = AppColors.MainText, fontSize = 12.sp)
+                    Spacer(modifier = Modifier.height(2.dp))
                     Text(text = advice, color = AppColors.SubGray, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
             }
