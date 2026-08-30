@@ -51,7 +51,7 @@ class TencentStockApi(private val network: () -> NetworkModule) : StockApi {
                 pe = pe, etfRatio = 0.0,
                 aiProfile = AiProfile("持股观望", "低位企稳", 60, "继续持有"), // 占位,下面重填
             )
-            val profile = deriveAiProfile(item.copy(price = price, change = change, changePct = changePct))
+            val profile = deriveAiProfile(item)
             val enabled = profile.score >= 80
             items.add(item.copy(aiEnabled = enabled, aiBrief = briefText(profile), aiProfile = profile))
         }
@@ -73,7 +73,10 @@ class TencentStockApi(private val network: () -> NetworkModule) : StockApi {
         if (raw == null) return null
         val key = "v_${market}${code}="
         val i = raw.indexOf(key)
-        if (i < 0) return null
+        if (i < 0) {
+            println("TencentStockApi: no key '$key' in response body (HK prefix or format changed?)")
+            return null
+        }
         val start = raw.indexOf('"', i)
         if (start < 0) return null
         val end = raw.indexOf('"', start + 1)

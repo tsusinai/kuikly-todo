@@ -27,13 +27,13 @@ import com.tencent.kuikly.compose.ui.unit.dp
 import com.tencent.kuikly.compose.ui.unit.sp
 
 /**
- * 「分析智窗」底部常驻建议卡（单行/两态）。
+ * 「分析智窗」底部常驻建议卡（两态：思考→建议）。
  *
- * 白色胶囊，`sparkles + 分析智窗` 标题常驻；右侧内容随 [thinking] 两态切换：
+ * 白色胶囊，`sparkles + 分析智窗` 标题常驻；右侧内容随 [thinking] 切换：
  *  - 思考态：浅灰「思考中......」
- *  - 建议态：`全盘股票AI建议：`（MainText）+ [advice] 文案（SubGray，两行）
+ *  - 建议态：`全盘AI建议·<dimensionLabel>`（MainText）+ [advice] 文案（SubGray，最多两行）
  *
- * 作为常驻信息卡，默认不绑定点击动作；拖入股票的入口已移除。
+ * 长按整卡呼出维度选择弹层（[onLongPress]）；拖入股票的入口已移除。
  */
 @Composable
 fun AiBottomBar(
@@ -49,8 +49,8 @@ fun AiBottomBar(
             .padding(horizontal = 8.dp)
             .shadow(2.dp, RoundedCornerShape(16.dp), clip = false)
             .background(Color.White, RoundedCornerShape(16.dp))
-            .padding(horizontal = 12.dp, vertical = 8.dp)
-            .pointerInput(Unit) { detectTapGestures(onLongPress = { onLongPress() }) },
+            .pointerInput(Unit) { detectTapGestures(onLongPress = { onLongPress() }) }
+            .padding(horizontal = 12.dp, vertical = 8.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),

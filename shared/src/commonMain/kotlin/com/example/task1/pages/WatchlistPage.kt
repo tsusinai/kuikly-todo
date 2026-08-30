@@ -59,6 +59,7 @@ import com.tencent.kuikly.core.module.Module
 import com.tencent.kuikly.core.module.NetworkModule
 import com.tencent.kuikly.core.module.RouterModule
 import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -98,6 +99,7 @@ fun WatchlistScreen() {
     var dimension by remember { mutableStateOf(GroupDimension.ACTION) }
     var showDimPicker by remember { mutableStateOf(false) }
     var offline by remember { mutableStateOf(false) }
+    var reloadKey by remember { mutableStateOf(0) }
     var selectedTab by remember { mutableStateOf("自选") }
     var showSheet by remember { mutableStateOf(false) }
     var activeStock by remember { mutableStateOf<StockItem?>(null) }
@@ -129,6 +131,8 @@ fun WatchlistScreen() {
                 offline = false
                 live
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Throwable) {
             offline = true
             SampleStockApi.fetchWatchlist()
@@ -163,7 +167,7 @@ fun WatchlistScreen() {
     }
 
     // 进入页面:思考中→(实时/兜底)加载→显示;空/异常回退内置样例并置 offline
-    LaunchedEffect(Unit) {
+    LaunchedEffect(reloadKey) {
         thinking = true
         stocks = fetch()
         delay(800)
@@ -207,6 +211,19 @@ fun WatchlistScreen() {
             modifier = Modifier.weight(1f).fillMaxWidth(),
             beyondBoundsItemCount = 3,
         ) {
+            if (offline) {
+                item {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp)
+                            .background(AppColors.HeaderBg, RoundedCornerShape(8.dp))
+                            .clickable { offline = false; reloadKey++ }
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(text = "实时行情暂不可用，展示示例数据（点此重试）", color = AppColors.RiskText, fontSize = 12.sp)
+                    }
+                }
+            }
             item { MarketOverviewBar() }
             item { Spacer(modifier = Modifier.height(10.dp)) }
             groups.forEach { group ->
