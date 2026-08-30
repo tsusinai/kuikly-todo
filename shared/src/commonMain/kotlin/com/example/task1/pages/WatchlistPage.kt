@@ -11,12 +11,18 @@ import com.example.task1.base.BridgeModule
 import com.example.task1.components.AiBottomBar
 import com.example.task1.components.AiBottomSheet
 import com.example.task1.components.BottomNav
+import com.example.task1.components.DimensionPickerSheet
+import com.example.task1.components.GroupHeader
 import com.example.task1.components.MarketOverviewBar
 import com.example.task1.components.StockCard
 import com.example.task1.components.TabBar
 import com.example.task1.data.AiAnalysis
+import com.example.task1.data.GroupDimension
 import com.example.task1.data.SampleStockApi
+import com.example.task1.data.StockGroup
 import com.example.task1.data.StockItem
+import com.example.task1.data.TencentStockApi
+import com.example.task1.data.groupStocks
 import com.example.task1.theme.AppColors
 import com.tencent.kuikly.compose.ComposeContainer
 import com.tencent.kuikly.compose.setContent
@@ -50,6 +56,7 @@ import com.tencent.kuikly.compose.ui.unit.dp
 import com.tencent.kuikly.compose.ui.unit.sp
 import com.tencent.kuikly.core.annotations.Page
 import com.tencent.kuikly.core.module.Module
+import com.tencent.kuikly.core.module.NetworkModule
 import com.tencent.kuikly.core.module.RouterModule
 import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
 import kotlinx.coroutines.delay
@@ -87,6 +94,10 @@ class WatchlistPage : ComposeContainer() {
 fun WatchlistScreen() {
     // 页面级状态：列表数据、当前 Tab、AI 弹层开关、弹层所需数据
     var stocks by remember { mutableStateOf<List<StockItem>>(emptyList()) }
+    // 分组维度:长按「分析智窗」呼出维度弹层切换;offline 标记实时行情失败→回退内置样例(供后续 UI 消费)
+    var dimension by remember { mutableStateOf(GroupDimension.ACTION) }
+    var showDimPicker by remember { mutableStateOf(false) }
+    var offline by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableStateOf("自选") }
     var showSheet by remember { mutableStateOf(false) }
     var activeStock by remember { mutableStateOf<StockItem?>(null) }
@@ -98,6 +109,31 @@ fun WatchlistScreen() {
     var advice by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
     val activity = LocalActivity.current
+    // 获取框架级网络模块:本机走腾讯实时行情,失败回退内置样例
+    fun network(): NetworkModule = activity.acquireModule<NetworkModule>(NetworkModule.MODULE_NAME)
+
+    // 分组摘要文案:按当前维度对分组生成「重点N只」式覆盖描述
+    fun buildAdvice(groups: List<StockGroup>): String =
+        if (groups.isEmpty()) "暂无自选股"
+        else groups.joinToString("、") { g -> "${g.title.replace("股票建议", "")}${g.stocks.size}只" }
+
+    // 加载自选:优先腾讯实时;代码表固定 7 只,若空列表则认为实时失败→回退内置样例并标记 offline;
+    // 网络异常同样回退。offline 作为兜底信号暂不由本页 UI 消费。
+    val fetch: suspend () -> List<StockItem> = {
+        try {
+            val live = TencentStockApi { network() }.fetchWatchlist()
+            if (live.isEmpty()) {
+                offline = true
+                SampleStockApi.fetchWatchlist()
+            } else {
+                offline = false
+                live
+            }
+        } catch (e: Throwable) {
+            offline = true
+            SampleStockApi.fetchWatchlist()
+        }
+    }
     // 分档触觉：keyboard/medium/light 由 BridgeModule.vibrateShort(type) 支持（现只用默认 heavy）
     fun haptic(type: String) {
         activity.acquireModule<BridgeModule>(BridgeModule.MODULE_NAME).vibrateShort(type)
@@ -126,17 +162,24 @@ fun WatchlistScreen() {
         activity.acquireModule<RouterModule>(RouterModule.MODULE_NAME).openPage("aiReport", pj)
     }
 
-    // 进入页面时加载自选列表；同时驱动智窗「思考中…… → 全盘建议」自动切换
-    LaunchedEffect(Unit) { stocks = SampleStockApi.fetchWatchlist() }
+    // 进入页面:思考中→(实时/兜底)加载→显示;空/异常回退内置样例并置 offline
     LaunchedEffect(Unit) {
         thinking = true
+        stocks = fetch()
         delay(800)
-        advice = SampleStockApi.fetchGlobalAdvice()
         thinking = false
+    }
+
+    // 智窗建议文案跟随当前维度(切维度/换数据时重新生成摘要)
+    LaunchedEffect(dimension, stocks) {
+        advice = buildAdvice(groupStocks(stocks, dimension))
     }
 
     // 顶部状态栏高度（dp）：让 HeaderBg 背景覆盖到状态栏顶端、内容避开状态栏
     val statusBarHeight = LocalConfiguration.current.statusBarHeight
+
+    // 分组值一次性计算:按当前维度对自选股分组(LazyColumn 组头 + 组内卡片复用同一记忆值)
+    val groups = remember(stocks, dimension) { groupStocks(stocks, dimension) }
 
     Column(modifier = Modifier.fillMaxSize().background(AppColors.PageBg)) {
         // 顶部 header：搜索框 + Tab 栏（该区域固定不随列表滚动；背景延伸进状态栏）
@@ -166,29 +209,32 @@ fun WatchlistScreen() {
         ) {
             item { MarketOverviewBar() }
             item { Spacer(modifier = Modifier.height(10.dp)) }
-            items(stocks, key = { it.id }) { item ->
-                // 每张卡片：单击选中/取消（仅一张展开）；长按拖拽入口已移除
-                var cardPressed by remember { mutableStateOf(false) }
-                val cardScale by animateFloatAsState(if (cardPressed) 0.985f else 1f, tween(120))
-                Box(
-                    modifier = Modifier
-                        .scale(cardScale)
-                        .pointerInput(item) {
-                            detectTapGestures(
-                                onPress = { cardPressed = true; tryAwaitRelease(); cardPressed = false },
-                                onTap = {
-                                    selectedId = if (selectedId == item.id) null else item.id
-                                    haptic("light")   // 点选轻震
-                                },
-                            )
-                        },
-                ) {
-                    StockCard(
-                        item = item,
-                        selected = selectedId == item.id,
-                        onOpenAi = { openPanel(item) },
-                        onEnterDetail = { openDetail(item) },
-                    )
+            groups.forEach { group ->
+                item(key = "h-${dimension.name}-${group.title}") { GroupHeader(group) }
+                items(group.stocks, key = { it.id }) { item ->
+                    // 每张卡片：单击选中/取消（仅一张展开）；长按拖拽入口已移除
+                    var cardPressed by remember { mutableStateOf(false) }
+                    val cardScale by animateFloatAsState(if (cardPressed) 0.985f else 1f, tween(120))
+                    Box(
+                        modifier = Modifier
+                            .scale(cardScale)
+                            .pointerInput(item) {
+                                detectTapGestures(
+                                    onPress = { cardPressed = true; tryAwaitRelease(); cardPressed = false },
+                                    onTap = {
+                                        selectedId = if (selectedId == item.id) null else item.id
+                                        haptic("light")   // 点选轻震
+                                    },
+                                )
+                            },
+                    ) {
+                        StockCard(
+                            item = item,
+                            selected = selectedId == item.id,
+                            onOpenAi = { openPanel(item) },
+                            onEnterDetail = { openDetail(item) },
+                        )
+                    }
                 }
             }
             item { Spacer(modifier = Modifier.height(50.dp)) }
@@ -199,8 +245,8 @@ fun WatchlistScreen() {
             AiBottomBar(
                 advice = advice,
                 thinking = thinking,
-                dimensionLabel = "全盘",
-                onLongPress = { /* Task 7: 呼出维度选择弹层 */ },
+                dimensionLabel = dimension.label,
+                onLongPress = { showDimPicker = true },
             )
             BottomNav(selected = "行情")
         }
@@ -215,6 +261,24 @@ fun WatchlistScreen() {
             scrimColor = Color(0x66000000),
         ) {
             AiBottomSheet(analysis = analysis!!, stock = activeStock, onDismiss = { showSheet = false }, onViewReport = { openReport() })
+        }
+    }
+
+    // 长按「分析智窗」呼出的维度选择弹层:切换分组维度,选中即关闭
+    if (showDimPicker) {
+        ModalBottomSheet(
+            visible = showDimPicker,
+            onDismissRequest = { showDimPicker = false },
+            containerColor = AppColors.PageBg,
+            scrimColor = Color(0x66000000),
+        ) {
+            DimensionPickerSheet(
+                current = dimension,
+                onSelect = { dim ->
+                    dimension = dim
+                    showDimPicker = false
+                },
+            )
         }
     }
 }
