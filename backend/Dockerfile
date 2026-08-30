@@ -4,7 +4,11 @@
 # 因此运行阶段不能用 `java -jar <thin jar>`(会 NoClassDefFoundError),须用 `-cp "app/lib/*"`。
 FROM gradle:8.5-jdk17 AS build
 WORKDIR /app
-COPY build.gradle.kts settings.gradle.kts gradle.properties ./
+# 注意:不拷贝 gradle.properties —— 它只携带本机专属的 `org.gradle.java.home`(指向 Windows
+# 主机上的 JDK17 绝对路径),该路径在 Linux 构建容器内不存在,会导致 Gradle 启动报错。
+# 容器镜像 gradle:8.5-jdk17 已自带 JDK17,依赖解析需要的镜像源/仓库配置都在 settings.gradle.kts
+# 与 build.gradle.kts 中;gradle.properties 里的 jvmargs/kotlin.code.style 也无需继承。
+COPY build.gradle.kts settings.gradle.kts ./
 COPY gradle ./gradle
 COPY src ./src
 RUN gradle installDist --no-daemon

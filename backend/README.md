@@ -15,6 +15,8 @@ docker build -t task1-backend .
 docker run -p 8080:8080 -e PORT=8080 task1-backend
 ```
 
+> Dockerfile 里的 COPY 是相对路径,故 docker 构建需在 `backend/` 目录下执行。
+
 > 镜像基于 `eclipse-temurin:17-jre`,以 `installDist` 产物的 `lib/*` classpath 运行
 > (`java -cp app/lib/* com.example.task1.backend.ApplicationKt`),
 > 每次容器内 `gradle installDist` 生成的 `build/install/task1-backend` 目录直接作为运行目录。
