@@ -10,7 +10,10 @@ import kotlin.coroutines.suspendCoroutine
  * 自选代码固定,本地维护 市场前缀 + code→name 映射(规避跨端 GBK 解码)。
  * 行情字段按腾讯 `~` 分隔协议映射;价位元→分、市值亿→元。AI 画像由 deriveAiProfile 推导。
  */
-class TencentStockApi(private val network: () -> NetworkModule) : StockApi {
+class TencentStockApi(
+    private val aiProvider: AiProfileProvider = RuleEngineAiProvider,
+    private val network: () -> NetworkModule,
+) : StockApi {
 
     // 自选代码表(本地固定):code -> (marketPrefix, name)
     private val codebook: List<Pair<String, Pair<String, String>>> = listOf(
@@ -51,7 +54,7 @@ class TencentStockApi(private val network: () -> NetworkModule) : StockApi {
                 pe = pe, etfRatio = 0.0,
                 aiProfile = AiProfile("持股观望", "低位企稳", 60, "继续持有"), // 占位,下面重填
             )
-            val profile = deriveAiProfile(item)
+            val profile = aiProvider.profileFor(item)
             val enabled = profile.score >= 80
             items.add(item.copy(aiEnabled = enabled, aiBrief = briefText(profile), aiProfile = profile))
         }
