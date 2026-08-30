@@ -59,11 +59,17 @@ fun io.ktor.server.routing.Route.watchlistRoutes(service: WatchlistService) {
             call.respond(HttpStatusCode.BadRequest, ErrorDto("invalid_codes"))
             return@get
         }
-        val dto = service.fetchAnalysis(token)
-        if (dto == null) {
-            call.respond(HttpStatusCode.NotFound, ErrorDto("not_found"))
-        } else {
-            call.respond(dto)
+        try {
+            val dto = service.fetchAnalysis(token)
+            if (dto == null) {
+                call.respond(HttpStatusCode.NotFound, ErrorDto("not_found"))
+            } else {
+                call.respond(dto)
+            }
+        } catch (e: UpstreamUnavailable) {
+            call.respond(HttpStatusCode.BadGateway, ErrorDto("upstream_unavailable"))
+        } catch (e: Throwable) {
+            call.respond(HttpStatusCode.InternalServerError, ErrorDto("internal_error"))
         }
     }
 }

@@ -85,4 +85,12 @@ class RoutesTest {
         assertEquals(HttpStatusCode.NotFound, r.status)
         assertTrue(r.bodyAsText().contains("not_found"))
     }
+
+    @Test
+    fun `analysis upstream failure returns 502`() = testApplication {
+        application { installRoutes(service()) }
+        val r = client.get("/analysis/sz300750")
+        assertEquals(HttpStatusCode.BadGateway, r.status)
+        assertTrue(r.bodyAsText().contains("upstream_unavailable"))
+    }
 }

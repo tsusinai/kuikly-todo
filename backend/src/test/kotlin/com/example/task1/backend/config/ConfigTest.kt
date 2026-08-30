@@ -2,6 +2,7 @@ package com.example.task1.backend.config
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 
 class ConfigTest {
     @Test
@@ -27,5 +28,15 @@ class ConfigTest {
         assertEquals("http://example.com/q=", cfg.tencentQuoteUrl)
         assertEquals(3000L, cfg.tencentTimeoutMs)
         assertEquals("llm", cfg.aiProvider)
+    }
+
+    @Test
+    fun `invalid PORT throws`() {
+        assertFailsWith<IllegalArgumentException> { Config.load(mapOf("PORT" to "abc")) }
+    }
+
+    @Test
+    fun `invalid AI_PROVIDER throws`() {
+        assertFailsWith<IllegalArgumentException> { Config.load(mapOf("AI_PROVIDER" to "wat")) }
     }
 }

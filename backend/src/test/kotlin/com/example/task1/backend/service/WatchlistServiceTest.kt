@@ -89,4 +89,10 @@ class WatchlistServiceTest {
         val service = WatchlistService(FakeClient(rawFor("600519")), FixedAiEngine())
         assertNull(runBlocking { service.fetchAnalysis("sz000001") })
     }
+
+    @Test
+    fun `fetchAnalysis of upstream failure throws UpstreamUnavailable`() {
+        val service = WatchlistService(FakeClient(null), FixedAiEngine())
+        assertFailsWith<UpstreamUnavailable> { runBlocking { service.fetchAnalysis("sh600519") } }
+    }
 }

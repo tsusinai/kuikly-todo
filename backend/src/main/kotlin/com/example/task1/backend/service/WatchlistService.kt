@@ -43,6 +43,9 @@ class WatchlistService(
         }
 
         val profiles = if (stocks.isEmpty()) emptyList() else aiEngine.profileForAll(stocks)
+        require(stocks.size == profiles.size) {
+            "AiEngine returned ${profiles.size} profiles for ${stocks.size} stocks"
+        }
         val profileByCode = stocks.zip(profiles).associate { it.first.code to it.second }
 
         val dtos = stocks.map { r ->
@@ -74,7 +77,7 @@ class WatchlistService(
         val raw = try {
             client.fetch(token)
         } catch (e: Throwable) {
-            return null    // 单 code 分析:网络失败视为找不到,交 route → 404
+            throw UpstreamUnavailable(e)
         }
         val r = QuoteParser.parse(QuoteParser.extractBody(raw, market, code), market) ?: return null
         val p = aiEngine.profileForAll(listOf(r)).first()
