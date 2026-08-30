@@ -9,6 +9,7 @@ data class StockItem(
     val changePct: Double,    // 涨跌幅 %
     val aiEnabled: Boolean,
     val aiBrief: String,      // AI 推介（后端预置推荐）副标题，如 "近5日连续上涨，MACD金叉形成，建议查看详情"
+    val aiProfile: AiProfile, // AI 四维画像(分组依据)
     val high: Long,           // 今日最高(分)
     val low: Long,            // 今日最低(分)
     val open: Long,           // 今开(分)
@@ -42,19 +43,33 @@ const val GLOBAL_ADVICE: String = "这是一条全盘股票ai建议，面对全�
 object SampleStockApi : StockApi {
     private val list = listOf(
         StockItem("1", "贵州茅台", "600519", 185600, 4262, 2.35, true, "近5日连续上涨，MACD金叉形成，建议查看详情",
-            187200, 184500, 185100, 2_300_000_000_000, 2_280_000_000_000, 32.0, 18.8),
+            high = 187200, low = 184500, open = 185100, marketCap = 2_300_000_000_000, floatCap = 2_280_000_000_000, pe = 32.0, etfRatio = 18.8,
+            // 1 贵州茅台
+            aiProfile = AiProfile("重点关注", "MACD金叉", 95, "建议加自选")),
         StockItem("2", "腾讯控股", "00700", 39640, 475, 1.20, false, "游戏与广告回暖，估值处历史低位，可逢低关注",
-            39850, 39000, 39200, 3_100_000_000_000, 3_000_000_000_000, 18.6, 8.4),
+            high = 39850, low = 39000, open = 39200, marketCap = 3_100_000_000_000, floatCap = 3_000_000_000_000, pe = 18.6, etfRatio = 8.4,
+            // 2 腾讯控股
+            aiProfile = AiProfile("低吸关注", "低位企稳", 78, "建议建仓")),
         StockItem("3", "宁德时代", "300750", 23520, -188, -0.80, false, "锂电龙头回调企稳，紧盯海外产能落地节奏",
-            23900, 23300, 23750, 1_000_000_000_000, 900_000_000_000, 22.4, 12.5),
+            high = 23900, low = 23300, open = 23750, marketCap = 1_000_000_000_000, floatCap = 900_000_000_000, pe = 22.4, etfRatio = 12.5,
+            // 3 宁德时代
+            aiProfile = AiProfile("持股观望", "超跌反弹", 66, "继续持有")),
         StockItem("4", "比亚迪", "002594", 28600, 887, 3.10, true, "量能齐升，短线动能增强，建议观察",
-            28800, 27500, 27750, 830_000_000_000, 820_000_000_000, 24.0, 10.2),
+            high = 28800, low = 27500, open = 27750, marketCap = 830_000_000_000, floatCap = 820_000_000_000, pe = 24.0, etfRatio = 10.2,
+            // 4 比亚迪
+            aiProfile = AiProfile("重点关注", "量能放大", 90, "建议建仓")),
         StockItem("5", "中国平安", "601318", 4820, -24, -0.50, false, "寿险改革成效初显，股息率具备吸引力，适合长线",
-            4900, 4780, 4850, 880_000_000_000, 870_000_000_000, 8.6, 3.4),
+            high = 4900, low = 4780, open = 4850, marketCap = 880_000_000_000, floatCap = 870_000_000_000, pe = 8.6, etfRatio = 3.4,
+            // 5 中国平安
+            aiProfile = AiProfile("持股观望", "低位企稳", 64, "继续持有")),
         StockItem("6", "五粮液", "000858", 13860, 90, 0.65, false, "白酒板块情绪回暖，批价企稳，底部渐明",
-            14000, 13600, 13800, 540_000_000_000, 530_000_000_000, 19.8, 7.9),
+            high = 14000, low = 13600, open = 13800, marketCap = 540_000_000_000, floatCap = 530_000_000_000, pe = 19.8, etfRatio = 7.9,
+            // 6 五粮液
+            aiProfile = AiProfile("低吸关注", "低位企稳", 75, "建议加自选")),
         StockItem("7", "中芯国际", "688981", 9870, 415, 4.20, true, "放量上攻，MACD翻红，注意回踩",
-            10000, 9400, 9480, 780_000_000_000, 500_000_000_000, 48.0, 5.6),
+            high = 10000, low = 9400, open = 9480, marketCap = 780_000_000_000, floatCap = 500_000_000_000, pe = 48.0, etfRatio = 5.6,
+            // 7 中芯国际
+            aiProfile = AiProfile("重点关注", "量能放大", 88, "建议加自选")),
     )
 
     override suspend fun fetchWatchlist(): List<StockItem> = list
