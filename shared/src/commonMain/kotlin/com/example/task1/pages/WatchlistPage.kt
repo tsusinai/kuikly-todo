@@ -18,10 +18,12 @@ import com.example.task1.components.StockCard
 import com.example.task1.components.TabBar
 import com.example.task1.data.AiAnalysis
 import com.example.task1.data.GroupDimension
+import com.example.task1.data.RuleEngineAiProvider
 import com.example.task1.data.SampleStockApi
 import com.example.task1.data.StockGroup
 import com.example.task1.data.StockItem
 import com.example.task1.data.TencentStockApi
+import com.example.task1.data.deriveAiAnalysis
 import com.example.task1.data.groupStocks
 import com.example.task1.theme.AppColors
 import com.tencent.kuikly.compose.ComposeContainer
@@ -99,6 +101,7 @@ fun WatchlistScreen() {
     var dimension by remember { mutableStateOf(GroupDimension.ACTION) }
     var showDimPicker by remember { mutableStateOf(false) }
     var offline by remember { mutableStateOf(false) }
+    var missingStock by remember { mutableStateOf(0) }   // 实时行情「部分失败」的缺失只数(0=全成功),供角标
     var reloadKey by remember { mutableStateOf(0) }
     var selectedTab by remember { mutableStateOf("自选") }
     var showSheet by remember { mutableStateOf(false) }
@@ -113,6 +116,8 @@ fun WatchlistScreen() {
     val activity = LocalActivity.current
     // 获取框架级网络模块:本机走腾讯实时行情,失败回退内置样例
     fun network(): NetworkModule = activity.acquireModule<NetworkModule>(NetworkModule.MODULE_NAME)
+    // 单一腾讯 API 实例:实时拉取 + 弹层 AiAnalysis(派生)复用;注入 RuleEngineAiProvider(演示模型,预留真 LLM)
+    val tencentApi = remember { TencentStockApi(aiProvider = RuleEngineAiProvider, network = { network() }) }
 
     // 分组摘要文案:按当前维度对分组生成「重点N只」式覆盖描述
     fun buildAdvice(groups: List<StockGroup>): String =
@@ -123,18 +128,22 @@ fun WatchlistScreen() {
     // 网络异常同样回退。offline 作为兜底信号暂不由本页 UI 消费。
     val fetch: suspend () -> List<StockItem> = {
         try {
-            val live = TencentStockApi { network() }.fetchWatchlist()
+            val live = tencentApi.fetchWatchlist()
             if (live.isEmpty()) {
+                // 全失败 → 整体回退离线,并清空部分失败信号
                 offline = true
+                missingStock = 0
                 SampleStockApi.fetchWatchlist()
             } else {
                 offline = false
+                missingStock = tencentApi.lastMissing   // 部分成功时保留成功项 + 角标提示缺失数
                 live
             }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
             offline = true
+            missingStock = 0
             SampleStockApi.fetchWatchlist()
         }
     }
@@ -148,7 +157,8 @@ fun WatchlistScreen() {
         haptic("light")   // 弹层打开的轻震
         activeStock = stock
         scope.launch {
-            analysis = SampleStockApi.fetchAiAnalysis(stock.code)
+            // 由已加载的个股实时行情+画像派生弹层 AiAnalysis(与卡片口径一致,不再二次网络请求)
+            analysis = deriveAiAnalysis(stock)
             showSheet = true
         }
     }
@@ -221,6 +231,18 @@ fun WatchlistScreen() {
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(text = "实时行情暂不可用，展示示例数据（点此重试）", color = AppColors.RiskText, fontSize = 12.sp)
+                    }
+                }
+            } else if (missingStock > 0) {
+                item {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp)
+                            .background(AppColors.HeaderBg, RoundedCornerShape(8.dp))
+                            .clickable { missingStock = 0; reloadKey++ }
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(text = "部分行情获取失败（$missingStock），点此重试", color = AppColors.RiskText, fontSize = 12.sp)
                     }
                 }
             }

@@ -3,6 +3,7 @@ package com.example.task1.components
 import androidx.compose.runtime.Composable
 import com.example.task1.theme.AppColors
 import com.tencent.kuikly.compose.foundation.background
+import com.tencent.kuikly.compose.foundation.clickable
 import com.tencent.kuikly.compose.foundation.gestures.detectTapGestures
 import com.tencent.kuikly.compose.foundation.layout.Arrangement
 import com.tencent.kuikly.compose.foundation.layout.Box
@@ -67,10 +68,23 @@ fun AiBottomBar(
             if (thinking) {
                 Text(text = "思考中......", color = AppColors.SubGray, fontSize = 13.sp)
             } else {
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(text = "全盘AI建议·$dimensionLabel", color = AppColors.MainText, fontSize = 12.sp)
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(text = advice, color = AppColors.SubGray, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(text = "全盘AI建议·$dimensionLabel", color = AppColors.MainText, fontSize = 12.sp)
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(text = advice, color = AppColors.SubGray, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
+                    // 维度切换入口:点击弹维度层(与长按等价)。assets 无切换类 icon,用「▾」文本箭头;如需 PNG 可补 swap.png
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Box(
+                        modifier = Modifier
+                            .size(18.dp)
+                            .background(AppColors.AiLight, RoundedCornerShape(9.dp))
+                            .clickable { onLongPress() },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(text = "▾", color = AppColors.MainText, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                    }
                 }
             }
         }
