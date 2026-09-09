@@ -1,5 +1,12 @@
 package com.example.task1.data
 
+import kotlin.time.Clock
+import kotlin.time.ExperimentalTime
+
+/** 当前时间（epoch millis）。KMP 无系统时钟,用 stdlib 实验性 Clock;封装一处便于替换。 */
+@OptIn(ExperimentalTime::class)
+internal fun nowMillis(): Long = Clock.System.now().toEpochMilliseconds()
+
 data class StockItem(
     val id: String,
     val name: String,
@@ -19,6 +26,16 @@ data class StockItem(
     val etfRatio: Double,     // 含X ETF占比 %
 )
 
+/** 主列表数据源状态:实时/缓存/离线。客户端盖章,页面据此打角标(实时/缓存/离线三态)。 */
+enum class DataSource { LIVE, CACHE, OFFLINE }
+
+/** 主列表一行数据 + 元信息(更新时间/来源)。fetchWatchlist 的返回值;fetchedAt/source 客户端计算。 */
+data class WatchlistBundle(
+    val stocks: List<StockItem>,
+    val fetchedAt: Long,
+    val source: DataSource,
+)
+
 data class AiAnalysis(
     val trendLabel: String,       // "短期看涨信号明显"
     val trendText: String,        // 正文
@@ -29,9 +46,9 @@ data class AiAnalysis(
     val stopLossPrice: Long,      // 分
 )
 
-/** 预留：接真实行情/分析接口时只替换实现。 */
+/** 预留：接真实行情/分析接口时只替换实现。fetchWatchlist 返回带元信息的 Bundle。 */
 interface StockApi {
-    suspend fun fetchWatchlist(): List<StockItem>
+    suspend fun fetchWatchlist(): WatchlistBundle
     suspend fun fetchAiAnalysis(code: String): AiAnalysis
     suspend fun fetchStock(code: String): StockItem?
     suspend fun fetchGlobalAdvice(): String
@@ -72,7 +89,8 @@ object SampleStockApi : StockApi {
             aiProfile = AiProfile(AiLabels.ACTION_FOCUS, AiLabels.SIGNAL_VOLUME, 88, AiLabels.SCENARIO_ADD)),
     )
 
-    override suspend fun fetchWatchlist(): List<StockItem> = list
+    // 固定数据替身:作为「首载无缓存失败」的 OFFLINE 兜底;source 恒为 OFFLINE。
+    override suspend fun fetchWatchlist(): WatchlistBundle = WatchlistBundle(list, nowMillis(), DataSource.OFFLINE)
 
     override suspend fun fetchStock(code: String): StockItem? = list.find { it.code == code }
 

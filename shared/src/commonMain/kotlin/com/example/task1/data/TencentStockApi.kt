@@ -64,13 +64,13 @@ class TencentStockApi(
     var lastMissing: Int = 0
         private set
 
-    override suspend fun fetchWatchlist(): List<StockItem> {
+    override suspend fun fetchWatchlist(): WatchlistBundle {
         val query = codebook.joinToString(",") { (code, m) -> "${m.first}${code}" }
         val url = "http://qt.gtimg.cn/q=$query"
         val raw = requestRaw(url)
-        if (raw == null) {               // 整体网络失败 → 视为全缺,由页面回退离线
+        if (raw == null) {               // 整体网络失败 → 空表,由页面回退离线(缓存/固定数据)
             lastMissing = codebook.size
-            return emptyList()
+            return WatchlistBundle(emptyList(), nowMillis(), DataSource.OFFLINE)
         }
         val items = mutableListOf<StockItem>()
         var missing = 0
@@ -91,15 +91,15 @@ class TencentStockApi(
             items.add(base.copy(aiEnabled = enabled, aiBrief = briefText(profile), aiProfile = profile))
         }
         lastMissing = missing
-        return items
+        return WatchlistBundle(items, nowMillis(), DataSource.LIVE)
     }
 
     override suspend fun fetchAiAnalysis(code: String): AiAnalysis {
-        val item = fetchWatchlist().find { it.code == code }
+        val item = fetchWatchlist().stocks.find { it.code == code }
         return item?.let { deriveAiAnalysis(it) } ?: SampleStockApi.fetchAiAnalysis(code)
     }
 
-    override suspend fun fetchStock(code: String): StockItem? = fetchWatchlist().find { it.code == code }
+    override suspend fun fetchStock(code: String): StockItem? = fetchWatchlist().stocks.find { it.code == code }
     override suspend fun fetchGlobalAdvice(): String = ""
 
     // 非 JSON 回包被包为 {"data":"原始内容"},取 optString("data") 得原始文本

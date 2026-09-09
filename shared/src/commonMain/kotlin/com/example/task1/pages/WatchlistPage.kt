@@ -17,12 +17,14 @@ import com.example.task1.components.MarketOverviewBar
 import com.example.task1.components.StockCard
 import com.example.task1.components.TabBar
 import com.example.task1.data.AiAnalysis
+import com.example.task1.data.DataSource
 import com.example.task1.data.GroupDimension
 import com.example.task1.data.RuleEngineAiProvider
 import com.example.task1.data.SampleStockApi
 import com.example.task1.data.StockGroup
 import com.example.task1.data.StockItem
 import com.example.task1.data.TencentStockApi
+import com.example.task1.data.WatchlistBundle
 import com.example.task1.data.deriveAiAnalysis
 import com.example.task1.data.groupStocks
 import com.example.task1.theme.AppColors
@@ -44,9 +46,12 @@ import com.tencent.kuikly.compose.foundation.layout.height
 import com.tencent.kuikly.compose.foundation.layout.padding
 import com.tencent.kuikly.compose.foundation.lazy.LazyColumn
 import com.tencent.kuikly.compose.foundation.lazy.items
+import com.tencent.kuikly.compose.foundation.lazy.rememberLazyListState
 import com.tencent.kuikly.compose.foundation.shape.RoundedCornerShape
 import com.tencent.kuikly.compose.material3.ModalBottomSheet
 import com.tencent.kuikly.compose.material3.Text
+import com.tencent.kuikly.compose.material3.pullToRefreshItem
+import com.tencent.kuikly.compose.material3.rememberPullToRefreshState
 import com.tencent.kuikly.compose.ui.Alignment
 import com.tencent.kuikly.compose.ui.Modifier
 import com.tencent.kuikly.compose.ui.draw.scale
@@ -97,12 +102,18 @@ class WatchlistPage : ComposeContainer() {
 fun WatchlistScreen() {
     // 页面级状态：列表数据、当前 Tab、AI 弹层开关、弹层所需数据
     var stocks by remember { mutableStateOf<List<StockItem>>(emptyList()) }
-    // 分组维度:长按「分析智窗」呼出维度弹层切换;offline 标记实时行情失败→回退内置样例(供后续 UI 消费)
+    // 分组维度:长按「分析智窗」呼出维度弹层切换
     var dimension by remember { mutableStateOf(GroupDimension.ACTION) }
     var showDimPicker by remember { mutableStateOf(false) }
-    var offline by remember { mutableStateOf(false) }
+    // 主列表数据源三态:OFFLINE(固定数据替身)/LIVE(实时)/CACHE(失败但有缓存);fetchedAt=上次成功更新时间(epoch millis)
+    var dataSource by remember { mutableStateOf(DataSource.OFFLINE) }
+    var fetchedAt by remember { mutableStateOf(0L) }
     var missingStock by remember { mutableStateOf(0) }   // 实时行情「部分失败」的缺失只数(0=全成功),供角标
     var reloadKey by remember { mutableStateOf(0) }
+    // 下拉刷新:refreshing 驱动 PullToRefreshState;listState 供 pullToRefreshItem 监测滚顶
+    var refreshing by remember { mutableStateOf(false) }
+    val listState = rememberLazyListState()
+    val pullState = rememberPullToRefreshState(isRefreshing = refreshing)
     var selectedTab by remember { mutableStateOf("自选") }
     var showSheet by remember { mutableStateOf(false) }
     var activeStock by remember { mutableStateOf<StockItem?>(null) }
@@ -124,28 +135,48 @@ fun WatchlistScreen() {
         if (groups.isEmpty()) "暂无自选股"
         else groups.joinToString("、") { g -> "${g.title.replace("股票建议", "")}${g.stocks.size}只" }
 
-    // 加载自选:优先腾讯实时;代码表固定 7 只,若空列表则认为实时失败→回退内置样例并标记 offline;
-    // 网络异常同样回退。offline 作为兜底信号暂不由本页 UI 消费。
-    val fetch: suspend () -> List<StockItem> = {
+    // 加载自选:优先腾讯实时;代码表固定 7 只。
+    // 实时拉取成功(非空)→ LIVE;失败且已有展示数据(缓存)→ CACHE 保留上次;首载无缓存失败→ OFFLINE 固定数据替身。
+    val fetch: suspend () -> WatchlistBundle = {
         try {
             val live = tencentApi.fetchWatchlist()
-            if (live.isEmpty()) {
-                // 全失败 → 整体回退离线,并清空部分失败信号
-                offline = true
-                missingStock = 0
-                SampleStockApi.fetchWatchlist()
-            } else {
-                offline = false
+            if (live.stocks.isNotEmpty()) {
                 missingStock = tencentApi.lastMissing   // 部分成功时保留成功项 + 角标提示缺失数
-                live
+                live.copy(source = DataSource.LIVE)
+            } else {
+                // 全失败 → 有缓存则 CACHE,否则固定数据 OFFLINE
+                missingStock = 0
+                if (stocks.isNotEmpty()) WatchlistBundle(stocks, fetchedAt, DataSource.CACHE)
+                else SampleStockApi.fetchWatchlist()
             }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
-            offline = true
             missingStock = 0
-            SampleStockApi.fetchWatchlist()
+            if (stocks.isNotEmpty()) WatchlistBundle(stocks, fetchedAt, DataSource.CACHE)
+            else SampleStockApi.fetchWatchlist()
         }
+    }
+
+    // 应用一组拉取结果到页面状态;showThinking 控制首载「思考中」动画(下拉刷新不触发)
+    suspend fun applyFetch(showThinking: Boolean) {
+        if (showThinking) thinking = true
+        val bundle = fetch()
+        stocks = bundle.stocks
+        fetchedAt = bundle.fetchedAt
+        dataSource = bundle.source
+        if (showThinking) {
+            delay(800)
+            thinking = false
+        }
+    }
+
+    // epoch millis → "HH:mm:ss"(东八区)。无日期库,纯算术偏移;仅作演示级时间标签
+    fun formatTime(ms: Long): String {
+        val bj = ms + 8 * 3600 * 1000L
+        fun two(v: Long) = ((v % 60).toString().padStart(2, '0'))
+        val h = ((bj / 3_600_000L) % 24).toString().padStart(2, '0')
+        return "$h:${two(bj / 60_000L)}:${two(bj / 1000L)}"
     }
     // 分档触觉：keyboard/medium/light 由 BridgeModule.vibrateShort(type) 支持（现只用默认 heavy）
     fun haptic(type: String) {
@@ -176,12 +207,9 @@ fun WatchlistScreen() {
         activity.acquireModule<RouterModule>(RouterModule.MODULE_NAME).openPage("aiReport", pj)
     }
 
-    // 进入页面:思考中→(实时/兜底)加载→显示;空/异常回退内置样例并置 offline
+    // 进入页面/点重试:思考中→(实时/缓存/兜底)加载→显示
     LaunchedEffect(reloadKey) {
-        thinking = true
-        stocks = fetch()
-        delay(800)
-        thinking = false
+        applyFetch(showThinking = true)
     }
 
     // 智窗建议文案跟随当前维度(切维度/换数据时重新生成摘要)
@@ -216,21 +244,46 @@ fun WatchlistScreen() {
             TabBar(selected = selectedTab, onSelect = { selectedTab = it })
         }
 
-        // 主体列表：市场摘要 + 股票卡片；超出可视区预加载 3 项避免滚动空白
+        // 主体列表：pull-to-refresh + 状态横幅 + 市场摘要 + 分组卡片；超出可视区预加载 3 项避免滚动空白
         LazyColumn(
             modifier = Modifier.weight(1f).fillMaxWidth(),
+            state = listState,
             beyondBoundsItemCount = 3,
         ) {
-            if (offline) {
+            // 下拉刷新:必须作首项;任务结束把 refreshing 置 false 让 state 自动归位
+            pullToRefreshItem(
+                state = pullState,
+                onRefresh = {
+                    refreshing = true
+                    scope.launch {
+                        applyFetch(showThinking = false)
+                        refreshing = false
+                    }
+                },
+                scrollState = listState,
+            )
+            if (dataSource == DataSource.OFFLINE && stocks.isNotEmpty()) {
                 item {
                     Box(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp)
                             .background(AppColors.HeaderBg, RoundedCornerShape(8.dp))
-                            .clickable { offline = false; reloadKey++ }
+                            .clickable { reloadKey++ }
                             .padding(horizontal = 10.dp, vertical = 8.dp),
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(text = "实时行情暂不可用，展示示例数据（点此重试）", color = AppColors.RiskText, fontSize = 12.sp)
+                    }
+                }
+            } else if (dataSource == DataSource.CACHE) {
+                item {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp)
+                            .background(AppColors.HeaderBg, RoundedCornerShape(8.dp))
+                            .clickable { reloadKey++ }
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(text = "行情非实时（更新于 ${formatTime(fetchedAt)}），点此重试", color = AppColors.RiskText, fontSize = 12.sp)
                     }
                 }
             } else if (missingStock > 0) {
@@ -238,7 +291,7 @@ fun WatchlistScreen() {
                     Box(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp)
                             .background(AppColors.HeaderBg, RoundedCornerShape(8.dp))
-                            .clickable { missingStock = 0; reloadKey++ }
+                            .clickable { reloadKey++ }
                             .padding(horizontal = 10.dp, vertical = 8.dp),
                         contentAlignment = Alignment.Center,
                     ) {

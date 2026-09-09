@@ -51,7 +51,7 @@ fun AiReportScreen() {
     var analysis by remember { mutableStateOf<AiAnalysis?>(null) }
     // 进入页面时取自选列表第一只股票，并拉取它的 AI 分析数据（内置样例，后续可切换真实行情）
     LaunchedEffect(Unit) {
-        val first = SampleStockApi.fetchWatchlist().firstOrNull()
+        val first = SampleStockApi.fetchWatchlist().stocks.firstOrNull()
         stock = first
         analysis = first?.let { SampleStockApi.fetchAiAnalysis(it.code) }
     }
