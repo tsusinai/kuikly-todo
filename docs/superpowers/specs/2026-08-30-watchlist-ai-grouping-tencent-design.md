@@ -68,8 +68,8 @@ class TencentStockApi(private val network: () -> NetworkModule) : StockApi { ...
 
 - **固定自选代码 + 市场前缀**:`600519/601318/688981→sh`、`300750/002594/000858→sz`、`00700→hk`;用于拼接 `q=` 参数。
 - `fetchWatchlist()`:拼 `http://qt.gtimg.cn/q=sh600519,hk00700,...` → `network().requestGet(url, JSONObject())`。
-- 非 JSON 回包被 SDK 包装为 `{"data":"..."}`,用 `data.optString("data")` 取原文;形如 `v_sh600519="1~贵州茅台~600519~1856.00~..."`,按 `~` split 后映射:`name(1)/code(2)/price(3)/open(5)/change(21)/changePct(22)/high(23)/low(24)/pe(≈29 或 45)/floatCap(≈34)/marketCap(≈35)`。
-  - ⚠️ **字段索引须对照一次真实响应核对**;价位字段 元→分(`×100`),市值字段 亿→元(`×1e8`);HK 格式略异需兼容。
+- 非 JSON 回包被 SDK 包装为 `{"data":"..."}`,用 `data.optString("data")` 取原文;形如 `v_sh600519="1~贵州茅台~600519~1856.00~..."`,按 `~` split 后映射:`name(1)/code(2)/price(3)/open(5)/change(31)/changePct(32)/high(33)/low(34)/pe(39)/floatCap(44,亿)/marketCap(45,亿)`。
+  - 价位字段 元→分(`×100`),市值字段 亿→元(`×1e8`);HK 与 A 股位号一致(pe 同为 39,40 恒为空)。2026-09-09 已对照真实响应核实。
 - 可能需在 `httpRequest` 加 headers(`Referer: https://gu.qq.com/`、`User-Agent: Mozilla/5.0`)规避校验;实机验证。
 - 每只股票取到行情后调 `deriveAiProfile(quote)` 填画像;`aiEnabled` = 画像 `score >= 80`;`aiBrief` 由画像生成一句副标题。
 

@@ -93,8 +93,8 @@ backend/
 `GET /health` → `{status:"ok"}`(探活)。
 
 **字段位号(已对照真实响应核实;与 App `TencentStockApi.RawQuote` 一致)**
-- `name(1)/code(2)/price(3)/open(5)/change(32)/changePct(33)/high(34)/low(35)/pe(39=A股,40=HK)/floatCap(44,单位亿)/marketCap(45,单位亿)`。
-- 价位字段 元→分(`×100`);市值字段 亿→元(`×1e8`)。HK 与 A 股在 31..35 一致,唯 pe 位号不同。
+- `name(1)/code(2)/price(3)/open(5)/change(31)/changePct(32)/high(33)/low(34)/pe(39,A股与HK均为39;40恒为空)/floatCap(44,单位亿)/marketCap(45,单位亿)`。
+- 价位字段 元→分(`×100`);市值字段 亿→元(`×1e8`)。HK 与 A 股在 31..45 位号一致(pe 同为 39,40 恒为空)。
 
 **响应(每股,镜像 App `StockItem`)**
 ```json
