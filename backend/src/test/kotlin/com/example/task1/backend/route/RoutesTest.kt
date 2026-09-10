@@ -23,7 +23,7 @@ private class StubClient : TencentClient {
         if (query.contains("300750")) throw RuntimeException("upstream")   // 整体失败
         val f = Array(46) { "0" }
         f[1] = "贵州茅台"; f[2] = "600519"; f[3] = "1856.00"; f[5] = "1830.00"
-        f[32] = "12.30"; f[33] = "0.67"; f[34] = "1900.00"; f[35] = "1820.00"
+        f[31] = "12.30"; f[32] = "0.67"; f[33] = "1900.00"; f[34] = "1820.00"
         f[39] = "30.1"; f[44] = "10000"; f[45] = "23400"
         return "v_sh600519=\"${f.joinToString("~")}\";"
     }
@@ -92,5 +92,27 @@ class RoutesTest {
         val r = client.get("/analysis/sz300750")
         assertEquals(HttpStatusCode.BadGateway, r.status)
         assertTrue(r.bodyAsText().contains("upstream_unavailable"))
+    }
+    @Test
+    fun `watchlist response includes summary`() = testApplication {
+        application { installRoutes(service()) }
+        val r = client.get("/watchlist?codes=sh600519")
+        assertEquals(HttpStatusCode.OK, r.status)
+        val text = r.bodyAsText()
+        assertTrue(text.contains("\"summary\""))
+        assertTrue(text.contains("\"text\""))
+    }
+    @Test
+    fun `watchlist without index body still 200 with summary`() = testApplication {
+        application { installRoutes(service()) }
+        val r = client.get("/watchlist?codes=sh600519")
+        assertEquals(HttpStatusCode.OK, r.status)
+        val text = r.bodyAsText()
+        assertTrue(text.contains("\"summary\""))
+        assertTrue(text.contains("\"benchmarkDelta\":null"))
+        assertTrue(text.contains("大盘基准数据缺失"))
+        val a = client.get("/analysis/sh600519")
+        assertEquals(HttpStatusCode.OK, a.status)
+        assertTrue(a.bodyAsText().contains("\"factors\""))
     }
 }

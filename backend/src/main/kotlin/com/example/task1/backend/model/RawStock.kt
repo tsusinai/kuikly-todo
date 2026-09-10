@@ -14,4 +14,10 @@ data class RawStock(
     val marketCap: Long,    // 元
     val floatCap: Long,     // 元
     val pe: Double,
+    val turnover: Double = 0.0,      // 换手率 %
+    val volumeRatio: Double = 0.0,   // 量比 (HK 无 → 0)
+    val amplitude: Double = 0.0,     // 振幅 %
+    val amount: Long = 0L,           // 成交额 元
+    val outer: Long = 0L,            // 外盘(手)
+    val inner: Long = 0L,            // 内盘(手)
 )

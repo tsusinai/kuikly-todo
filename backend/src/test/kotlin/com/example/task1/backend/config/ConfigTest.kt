@@ -39,4 +39,31 @@ class ConfigTest {
     fun `invalid AI_PROVIDER throws`() {
         assertFailsWith<IllegalArgumentException> { Config.load(mapOf("AI_PROVIDER" to "wat")) }
     }
+    @Test
+    fun `llm fields default when env empty`() {
+        val cfg = Config.load(mapOf())
+        assertEquals("", cfg.llmBaseUrl)
+        assertEquals("", cfg.llmApiKey)
+        assertEquals("", cfg.llmModel)
+        assertEquals(4500L, cfg.llmTimeoutMs)
+    }
+    @Test
+    fun `llm env overrides defaults`() {
+        val cfg = Config.load(
+            mapOf(
+                "LLM_BASE_URL" to "http://localhost:11434/v1",
+                "LLM_API_KEY" to "sk-x",
+                "LLM_MODEL" to "qwen2.5",
+                "LLM_TIMEOUT_MS" to "9000",
+            )
+        )
+        assertEquals("http://localhost:11434/v1", cfg.llmBaseUrl)
+        assertEquals("sk-x", cfg.llmApiKey)
+        assertEquals("qwen2.5", cfg.llmModel)
+        assertEquals(9000L, cfg.llmTimeoutMs)
+    }
+    @Test
+    fun `invalid LLM_TIMEOUT_MS throws`() {
+        assertFailsWith<IllegalArgumentException> { Config.load(mapOf("LLM_TIMEOUT_MS" to "abc")) }
+    }
 }

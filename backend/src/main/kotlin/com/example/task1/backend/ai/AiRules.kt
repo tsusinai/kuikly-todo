@@ -1,6 +1,7 @@
 package com.example.task1.backend.ai
 
 import com.example.task1.backend.dto.AiAnalysisDto
+import com.example.task1.backend.dto.AiFactorsDto
 import com.example.task1.backend.dto.AiProfileDto
 import com.example.task1.backend.model.RawStock
 
@@ -35,6 +36,17 @@ object AiThresh {
     const val STOP_RATIO = 0.05
 }
 
+/** 评分三部分(momentum/value/risk);口径逐字镜像客户端 `AiProfileDeriver.scoreParts`。 */
+internal fun scoreParts(changePct: Double, pe: Double): Triple<Int, Int, Int> = Triple(
+    (changePct.coerceIn(-5.0, 8.0) / 8.0 * 60.0).toInt(),                          // momentum 0-60
+    if (pe in 1.0..AiThresh.PE_GOOD) 25 else if (pe > AiThresh.PE_BAD) 10 else 15,  // value 0-25
+    when {                                                                          // risk 0-8
+        changePct < -2.0 -> 0
+        changePct < 0.0 -> 5
+        else -> 8
+    },
+)
+
 /** 由实时行情推导四维画像(纯函数,复刻客户端 deriveAiProfile)。 */
 fun deriveProfile(r: RawStock): AiProfileDto {
     val changePct = r.changePct
@@ -51,13 +63,7 @@ fun deriveProfile(r: RawStock): AiProfileDto {
         pe in 1.0..AiThresh.PE_GOOD -> AiLabels.SIGNAL_BOTTOM
         else -> AiLabels.SIGNAL_OVERSOLD
     }
-    val momentumScore = (changePct.coerceIn(-5.0, 8.0) / 8.0 * 60.0).toInt()
-    val valueScore = if (pe in 1.0..AiThresh.PE_GOOD) 25 else if (pe > AiThresh.PE_BAD) 10 else 15
-    val riskScore = when {
-        changePct < -2.0 -> 0
-        changePct < 0.0 -> 5
-        else -> 8
-    }
+    val (momentumScore, valueScore, riskScore) = scoreParts(changePct, pe)
     val score = (50 + momentumScore + valueScore + riskScore).coerceIn(0, 100)
     val scenario = when {
         action == AiLabels.ACTION_FOCUS && score >= AiThresh.SCORE_HIGH -> AiLabels.SCENARIO_ADD
@@ -69,8 +75,9 @@ fun deriveProfile(r: RawStock): AiProfileDto {
 }
 
 /** 弹层分析(复刻客户端 deriveAiAnalysis)。 */
-fun deriveAnalysis(r: RawStock, p: AiProfileDto): AiAnalysisDto {
+fun deriveAnalysis(r: RawStock, p: AiProfileDto, benchmarkDelta: Double? = null): AiAnalysisDto {
     val pct = r.changePct
+    val parts = scoreParts(pct, r.pe)
     val trendLabel = when {
         pct > AiThresh.ACTION_FOCUS_PCT -> "短期看涨信号明显"
         pct > 0.0 -> "短期震荡偏强"
@@ -93,5 +100,6 @@ fun deriveAnalysis(r: RawStock, p: AiProfileDto): AiAnalysisDto {
         score = p.score,
         targetPrice = (r.price + r.price * AiThresh.TARGET_RATIO).toLong(),
         stopLossPrice = (r.price - r.price * AiThresh.STOP_RATIO).toLong(),
+        factors = AiFactorsDto(parts.first, parts.second, parts.third, IndustryMap.of(r.code), benchmarkDelta = benchmarkDelta),
     )
 }
