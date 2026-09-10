@@ -17,8 +17,11 @@ import com.example.task1.components.MarketOverviewBar
 import com.example.task1.components.StockCard
 import com.example.task1.components.TabBar
 import com.example.task1.data.AiAnalysis
+import com.example.task1.data.AiSummary
 import com.example.task1.data.DataSource
+import com.example.task1.data.FactorThresh
 import com.example.task1.data.GroupDimension
+import com.example.task1.data.MockBenchmark
 import com.example.task1.data.RuleEngineAiProvider
 import com.example.task1.data.SampleStockApi
 import com.example.task1.data.StockGroup
@@ -26,7 +29,11 @@ import com.example.task1.data.StockItem
 import com.example.task1.data.TencentStockApi
 import com.example.task1.data.WatchlistBundle
 import com.example.task1.data.deriveAiAnalysis
+import com.example.task1.data.deriveBenchmarkDelta
+import com.example.task1.data.deriveSummary
+import com.example.task1.data.deriveTags
 import com.example.task1.data.groupStocks
+import com.example.task1.data.nowMillis
 import com.example.task1.theme.AppColors
 import com.tencent.kuikly.compose.ComposeContainer
 import com.tencent.kuikly.compose.setContent
@@ -108,6 +115,7 @@ fun WatchlistScreen() {
     // 主列表数据源三态:OFFLINE(固定数据替身)/LIVE(实时)/CACHE(失败但有缓存);fetchedAt=上次成功更新时间(epoch millis)
     var dataSource by remember { mutableStateOf(DataSource.OFFLINE) }
     var fetchedAt by remember { mutableStateOf(0L) }
+    var summary by remember { mutableStateOf<AiSummary?>(null) }
     var missingStock by remember { mutableStateOf(0) }   // 实时行情「部分失败」的缺失只数(0=全成功),供角标
     var reloadKey by remember { mutableStateOf(0) }
     // 下拉刷新:refreshing 驱动 PullToRefreshState;listState 供 pullToRefreshItem 监测滚顶
@@ -135,6 +143,17 @@ fun WatchlistScreen() {
         if (groups.isEmpty()) "暂无自选股"
         else groups.joinToString("、") { g -> "${g.title.replace("股票建议", "")}${g.stocks.size}只" }
 
+    // LIVE 契约尚未携带 tags/行业/基准;本地按与 SampleStockApi 相同口径补全,保证联网时 D1/D2 可见
+    fun enrich(bundle: WatchlistBundle): WatchlistBundle {
+        val items = bundle.stocks.map { item ->
+            val delta = item.benchmarkDelta
+                ?: deriveBenchmarkDelta(item, MockBenchmark.changePctByMarket[MockBenchmark.of(item.code)])
+            val withDelta = item.copy(benchmarkDelta = delta)
+            withDelta.copy(tags = deriveTags(withDelta))
+        }
+        return bundle.copy(stocks = items, summary = deriveSummary(items, bundle.fetchedAt))
+    }
+
     // 加载自选:优先腾讯实时;代码表固定 7 只。
     // 实时拉取成功(非空)→ LIVE;失败且已有展示数据(缓存)→ CACHE 保留上次;首载无缓存失败→ OFFLINE 固定数据替身。
     val fetch: suspend () -> WatchlistBundle = {
@@ -142,7 +161,7 @@ fun WatchlistScreen() {
             val live = tencentApi.fetchWatchlist()
             if (live.stocks.isNotEmpty()) {
                 missingStock = tencentApi.lastMissing   // 部分成功时保留成功项 + 角标提示缺失数
-                live.copy(source = DataSource.LIVE)
+                enrich(live).copy(source = DataSource.LIVE)
             } else {
                 // 全失败 → 有缓存则 CACHE,否则固定数据 OFFLINE
                 missingStock = 0
@@ -163,6 +182,7 @@ fun WatchlistScreen() {
         if (showThinking) thinking = true
         val bundle = fetch()
         stocks = bundle.stocks
+        summary = bundle.summary.takeIf { it.text.isNotBlank() }
         fetchedAt = bundle.fetchedAt
         dataSource = bundle.source
         if (showThinking) {
@@ -296,6 +316,21 @@ fun WatchlistScreen() {
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(text = "部分行情获取失败（$missingStock），点此重试", color = AppColors.RiskText, fontSize = 12.sp)
+                    }
+                }
+            }
+            item {
+                summary?.let { s ->
+                    val stale = s.stale || (nowMillis() - s.generatedAt > FactorThresh.STALE_MS)
+                    Box(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp)
+                        .background(if (stale) AppColors.HeaderBg else AppColors.AiLight, RoundedCornerShape(8.dp))
+                        .padding(10.dp)) {
+                        Column {
+                            Text("AI 摘要 · ${formatTime(s.generatedAt)}", color = AppColors.MainText, fontSize = 12.sp)
+                            Spacer(Modifier.height(4.dp))
+                            Text(s.text, color = AppColors.MainText, fontSize = 14.sp)
+                            if (stale) Text("基于较旧数据,建议下拉刷新", color = AppColors.RiskText, fontSize = 11.sp)
+                        }
                     }
                 }
             }

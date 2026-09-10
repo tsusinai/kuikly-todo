@@ -71,6 +71,10 @@ fun StockCard(
             .padding(12.dp)
     ) {
         TopRow(item)
+        if (item.tags.isNotEmpty()) {
+            Spacer(Modifier.height(8.dp))
+            TagRow(item.tags)
+        }
         // 建议行：重点股（aiEnabled=true）compact 直接露出，普通股仅展开后露出；仅在展开态可点 → 弹 AI 面板
         if (item.aiEnabled || selected) {
             Spacer(modifier = Modifier.height(10.dp))
@@ -140,6 +144,26 @@ private fun ChangeBadge(changePct: Double) {
             fontSize = 12.sp,
             fontWeight = FontWeight.Bold,
         )
+    }
+}
+
+/** D2 标签行：圆角描边小胶囊横向排列。Tags 来自 deriveTags(与后端镜像)。 */
+@Composable
+private fun TagRow(tags: List<String>) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        tags.forEach { tag ->
+            Box(
+                modifier = Modifier
+                    .background(Color.White, RoundedCornerShape(4.dp))
+                    .border(1.dp, AppColors.AiLight, RoundedCornerShape(4.dp))
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
+            ) {
+                Text(text = tag, color = AppColors.MainText, fontSize = 11.sp)
+            }
+        }
     }
 }
 

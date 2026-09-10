@@ -10,13 +10,12 @@ import kotlin.coroutines.suspendCoroutine
  * 自选代码固定,本地维护 市场前缀 + code→name 映射(规避跨端 GBK 解码)。
  *
  * 【字段索引 - 已对照真实响应核对】
- * 腾讯 `~` 分隔协议:name(1)/code(2)/price(3)/open(5)/change(32)/changePct(33)/high(34)/low(35)/
- * pe(39,HK 为 40)/floatCap(44,亿)/marketCap(45,亿)。
- * ⚠️ 早期用 change(21)/changePct(22)/high(23)/low(24) 是错的——那些位是买卖五档价格,
- * 会让 changePct 解析成千位数值(如 1297.5),须以此核对结果为准。
+ * 腾讯 `~` 分隔协议:name(1)/code(2)/price(3)/open(5)/change(31)/changePct(32)/high(33)/low(34)/
+ * pe(39,A股与HK均为39;40恒为空)/floatCap(44,亿)/marketCap(45,亿)。
+ * ⚠️ 勿用 21..24(买卖五档)或 32..35(错位到涨跌%/最高/最低/“价格·成交量·成交额”复合字段)。
  *
  * 解析统一抽到 [RawQuote] 常量 + [parseQuote] 中间结构,StockItem 与页面不感知协议位号;
- * HK 与 A 股在 31..35 一致,唯 pe 位置不同,按 market 分支取。
+ * HK 与 A 股在 31..45 位号一致(pe 同为 39,40 恒为空)。
  *
  * 失败容错:单票解析/字段缺失跳过但计入 [lastMissing],页面据此做「部分成功」角标(不静默);
  * 整体网络失败返回空表,由页面整体回退离线。
@@ -26,18 +25,18 @@ class TencentStockApi(
     private val network: () -> NetworkModule,
 ) : StockApi {
 
-    /** 腾讯 `~` 分隔字段位号(A股;HK 在 31..35 与 A 股一致)。 */
+    /** 腾讯 `~` 分隔字段位号(A股与 HK 一致)。 */
     private object RawQuote {
         const val NAME = 1
         const val CODE = 2
         const val PRICE = 3
         const val OPEN = 5
-        const val CHANGE = 32
-        const val CHANGE_PCT = 33
-        const val HIGH = 34
-        const val LOW = 35
+        const val CHANGE = 31
+        const val CHANGE_PCT = 32
+        const val HIGH = 33
+        const val LOW = 34
         const val PE_A = 39
-        const val PE_HK = 40
+        const val PE_HK = 39   // 实测 HK 的 PE 也在 39,40 恒为空
         const val FLOAT_CAP = 44   // 单位:亿
         const val MARKET_CAP = 45  // 单位:亿
     }
