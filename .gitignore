@@ -41,7 +41,9 @@ Kotlin-js-store
 ## Machine-specific & agent/tooling dirs (not part of source)
 .kotlin
 .claude
+.agents
 .superpowers
+.workbuddy
 .figma_tmp
 figma_renders
 .kdocs
