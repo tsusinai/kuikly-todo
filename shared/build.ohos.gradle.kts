@@ -4,6 +4,7 @@ plugins {
     id("com.android.library")
     id("com.google.devtools.ksp")
     id("maven-publish")
+    kotlin("plugin.compose")
 
 }
 
@@ -47,6 +48,8 @@ kotlin {
             dependencies {
                 implementation("com.tencent.kuikly-open:core:${Version.getKuiklyOhosVersion()}")
                 implementation("com.tencent.kuikly-open:core-annotations:${Version.getKuiklyOhosVersion()}")
+                // commonMain 全部是 Compose DSL:缺这一条,ohosArm64 编译必然失败
+                implementation("com.tencent.kuikly-open:compose:${Version.getKuiklyOhosVersion()}")
 
             }
         }

@@ -20,9 +20,8 @@ import com.example.task1.components.TabBar
 import com.example.task1.data.AiAnalysis
 import com.example.task1.data.DataSource
 import com.example.task1.data.FactorThresh
-import com.example.task1.data.RuleEngineAiProvider
 import com.example.task1.data.StockItem
-import com.example.task1.data.TencentStockApi
+import com.example.task1.data.StockApis
 import com.example.task1.data.deriveAiAnalysis
 import com.example.task1.data.nowMillis
 import com.example.task1.theme.AppColors
@@ -109,11 +108,11 @@ fun WatchlistScreen() {
     val activity = LocalActivity.current
     // 获取框架级网络模块:本机走腾讯实时行情,失败回退内置样例
     fun network(): NetworkModule = activity.acquireModule<NetworkModule>(NetworkModule.MODULE_NAME)
-    // 单一腾讯 API 实例:实时拉取 + 弹层 AiAnalysis(派生)复用;注入 RuleEngineAiProvider(演示模型,预留真 LLM)
-    val tencentApi = remember { TencentStockApi(aiProvider = RuleEngineAiProvider, network = { network() }) }
+    // 数据源链:自研后端 → 直连腾讯 → 本地样例。降级全部在数据层完成,页面不感知走了哪一层
+    val stockApi = remember { StockApis.stocks { network() } }
 
     // ViewModel：承载行情加载/分组/摘要/智窗建议等业务逻辑，UI 只负责渲染与交互
-    val vm: WatchlistViewModel = viewModel { WatchlistViewModel(tencentApi) }
+    val vm: WatchlistViewModel = viewModel { WatchlistViewModel(stockApi) }
 
     // 以下为纯 UI 状态（弹层开关、选中、下拉刷新等），保留在 Composable
     var showDimPicker by remember { mutableStateOf(false) }

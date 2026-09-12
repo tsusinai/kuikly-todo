@@ -117,7 +117,12 @@ private fun TopRow(item: StockItem) {
             Text(text = item.code, color = AppColors.SubGray, fontSize = AppTypography.Caption)
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(text = Utils.formatPrice2(item.price), color = AppColors.RiseRed, fontSize = AppTypography.Title, fontWeight = FontWeight.Bold)
+            Text(
+                text = Utils.formatPrice2(item.price),
+                color = if (item.change >= 0) AppColors.RiseRed else AppColors.Green,
+                fontSize = AppTypography.Title,
+                fontWeight = FontWeight.Bold,
+            )
             Spacer(modifier = Modifier.width(8.dp))
             // 涨跌额（带符号），如 +43.62；涨红跌绿
             Text(

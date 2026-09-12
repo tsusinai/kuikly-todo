@@ -8,6 +8,7 @@ import com.example.task1.backend.ai.SummaryProvider
 import com.example.task1.backend.client.HttpTencentClient
 import com.example.task1.backend.config.Config
 import com.example.task1.backend.route.modules
+import com.example.task1.backend.service.ChartService
 import com.example.task1.backend.service.WatchlistService
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
@@ -20,7 +21,8 @@ fun main() {
         if (config.aiProvider == "llm" && config.llmBaseUrl.isNotBlank()) LlmSummaryProvider(config)
         else RuleSummaryProvider
     val service = WatchlistService(client, ai, summary)
+    val chartService = ChartService(client, config)
     embeddedServer(Netty, port = config.port) {
-        modules(service)
+        modules(service, chartService)
     }.start(wait = true)
 }

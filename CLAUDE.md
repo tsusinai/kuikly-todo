@@ -18,6 +18,6 @@ The Kuikly AI skills are installed under `.claude/skills/` (e.g. `kuikly-compose
 
 ## Build
 
-- Gradle wrapper 8.5 (Tencent mirror), JDK 17 (set via `org.gradle.java.home` in `gradle.properties`).
+- Gradle wrapper 8.7 (Tencent mirror), JDK 17 (set via `org.gradle.java.home` in `gradle.properties`).
 - `./gradlew :shared:compileDebugKotlinAndroid` compiles the shared module for Android.
 - Kuikly artifacts resolve from `https://mirrors.tencent.com/nexus/repository/maven-tencent/` and Aliyun mirrors (see `settings.gradle.kts`).

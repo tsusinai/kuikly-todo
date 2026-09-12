@@ -46,8 +46,24 @@ Task1 是一个 **Kuikly Kotlin Multiplatform 单代码库 App**（Android / iOS
 
 ## 二、工作进程
 
-**分支**：`feat/watchlist-ai-grouping-tencent`（HEAD `2d854af`）
-**工作树**：含上一轮"数据源契约 / 后端代理"的未提交改动；**仓库默认不提交**。
+**分支**：`feat-ui-standardization`（HEAD `7f877ad`）
+**工作树**：含「真实数据源 + 评分维度最终优化」的未提交改动；**仓库默认不提交**。
+
+### 最近一轮：评分维度最终优化（对照验收标准）
+
+对照「功能实现完整性 40% / 代码质量 25% / AI 场景 25% / 加分项 10%」补的缺口：
+
+| 维度 | 本轮做了什么 |
+|---|---|
+| 功能完整性 | 详情页与报告页补齐**加载 / 失败可重试 / 空态**（`components/core/StateBox.kt`）；详情页加显式返回按钮、报告页返回键接上 `RouterModule.closePage()` |
+| 页面闭环 | 详情页、报告页不再吃 mock：行情/走势/分析全部走同一条降级链，数值与主列表一致 |
+| AI 场景 | App 首次真正调用自研后端，`/watchlist` 的摘要与 `/analysis` 的分析来自后端（可切真实 LLM），不再是本地规则的独角戏 |
+| 真实 API | 后端新增 `/chart`（分时 + 日/周/月/年 K，接腾讯真实源）；客户端零解析的契约得以兑现 |
+| 代码质量 | 新增 `data/BackendApi.kt`（后端层）/ `data/ApiRouter.kt`（降级路由）/ `data/BackendClient.kt`（基址发现）；删掉 `WatchlistViewModel` 里 `api as? TencentStockApi` 的向下转型，改为 `WatchlistBundle.missing`；均线计算抽成 `movingAverages` 供两条数据源共用 |
+| 平台覆盖 | iOS 桥接补 `vibrateShort`/`toast`；鸿蒙补 Compose 插件与依赖、注册资产拷贝插件（**均未在本机验证**，见 `runbook-platform.md` §3/§4） |
+
+**验收**：后端 `11 suites / 89 tests / 0 failures`；App `:shared:compileDebugKotlinAndroid --rerun-tasks` `BUILD SUCCESSFUL`。
+**联调步骤**见 `runbook-platform.md` §9。**`shared` 无测试源集**，App 侧仍以「编译门禁 + 手测」验收。
 
 | 计划 | 状态 |
 |---|---|

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Ktor 的 CallLogging 走 SLF4J;没有绑定实现时默认是 NOP,请求日志会全部丢失。
+  这里只把 io.ktor 调到 INFO(每请求一行),其余压到 WARN,避免 Netty 噪音刷屏。
+-->
+<configuration>
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} %-5level %logger{28} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!--
+      Ktor 2.3.x 的 Application logger 名叫 ktor.application(既不叫 io.ktor.* 也不叫 Application),
+      配错前缀会让 CallLogging 的请求行静默丢失 —— 实测确认。
+    -->
+    <logger name="ktor" level="INFO"/>
+
+    <root level="WARN">
+        <appender-ref ref="STDOUT"/>
+    </root>
+</configuration>

@@ -32,6 +32,13 @@ object AppColors {
     val CtaBg = Color(0xFF4353D9)          // CTA 实色靛蓝（白字对比 6.3:1）
     val HandleGray = Color(0xFFD5D9E0)  // 底部抽屉手柄灰
 
+    // 走势图表：均线族 / 网格 / 刻度文字
+    val Ma5 = Color(0xFFE8A33D)        // 均线 MA5（橙）
+    val Ma10 = Color(0xFF3B82F6)       // 均线 MA10（蓝）
+    val Ma20 = Color(0xFF8B5CF6)       // 均线 MA20（紫）
+    val ChartGrid = Color(0xFFEDF1F7)  // 图表网格线（比 Border 更浅）
+    val ChartAxis = Color(0xFF9AA3B2)  // 图表刻度文字
+
     val AiGradient = listOf(AiLight, AiBg)
     val RecommendGradient = listOf(Color(0xFF7048E8), Color(0xFF9B8AF0)) // 买入建议进度填充渐变
 }

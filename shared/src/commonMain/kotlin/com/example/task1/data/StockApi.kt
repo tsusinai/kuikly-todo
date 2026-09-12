@@ -55,12 +55,18 @@ data class AiFactors(
     val benchmarkDelta: Double? = null,
 )
 
-/** 主列表一行数据 + 元信息(更新时间/来源)。fetchWatchlist 的返回值;fetchedAt/source 客户端计算。 */
+/**
+ * 主列表一行数据 + 元信息(更新时间/来源/缺失数)。fetchWatchlist 的返回值。
+ *
+ * [missing] 是本次未能取到的条目数(0 = 全成功),由数据源给出——后端在整体响应里带 `missing`,
+ * 直连腾讯时由实现自行统计。页面据此打「部分行情获取失败」角标,**不再向下转型**去读实现类字段。
+ */
 data class WatchlistBundle(
     val stocks: List<StockItem>,
     val fetchedAt: Long,
     val source: DataSource,
     val summary: AiSummary = AiSummary("", 0L),
+    val missing: Int = 0,
 )
 
 data class AiAnalysis(

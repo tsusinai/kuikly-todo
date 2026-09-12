@@ -48,7 +48,8 @@ open iosApp.xcodeproj    # Xcode 运行
 （需 macOS + Xcode + CocoaPods；Kotlin/Native 的 `iosArm64` 目标仅在 macOS 支持交叉编译。）
 
 ### 已知卡点 / 待办
-- 桥接不全：`iosApp/iosApp/KuiklyExpand/Modules/HRBridgeModule.m` 只实现 `copyToPasteboard`/`log`；commonMain `BridgeModule.kt` 调用的 `vibrateShort`/`toast`/`showAlert` 在 iOS 侧 **no-op（不崩）**。需要触觉/Toast 时按需补齐。
+- 桥接现状：已实现 `copyToPasteboard` / `log` / **`vibrateShort`**（UIImpactFeedbackGenerator，type 取 heavy/medium/light）/ **`toast`**（黑底浮层，2s 淡出）。仍是 no-op 的是 `showAlert` 与 `closePage` —— 二者在 Android 侧同样只是空实现，且 commonMain 未调用，**故 iOS 侧刻意不臆造签名**，需要时两端一起补。
+- ⚠️ 上述 .m 改动**未经编译验证**（本机无 macOS / Xcode）。改法是照抄同文件既有 ObjC 风格 + 主线程切回，风险集中在 `UIImpactFeedbackGenerator` / `UIScene` 的可用性（deploymentTarget 14.1，两者均满足）。
 - Compose 行为待验证：`LocalConfiguration.statusBarHeight` 顶栏避让、`ModalBottomSheet(4 参)`、`boundsInRoot`、动画 fork 包。改 commonMain 后务必用 Android 回归。
 
 ---
@@ -59,10 +60,19 @@ open iosApp.xcodeproj    # Xcode 运行
 - 消费方式：`:shared` 的 `ohosArm64` 目标编译为 `libshared.so`；CMake 链接 `libshared.so` + `libkuikly.so`；NAPI `initKuikly()` 初始化。
 - 独立 Gradle 世界：`settings.ohos.gradle.kts` + `build.ohos.gradle.kts` + `shared/build.ohos.gradle.kts`（KBA Kotlin `2.0.21-KBA-010`，Kuikly `2.7.0-2.0.21-ohos`），与主 `settings.gradle.kts`（Kotlin 2.1.21）**不统一**。
 
-### 🔴 首要障碍：`shared/build.ohos.gradle.kts` 是 DSL 模板，缺 Compose
-- 未应用 `com.tencent.kuikly-open.kuikly` / `kotlin("plugin.compose")`。
-- `commonMain` 只有 `core`/`core-annotations`，**无 `compose` 依赖** ⇒ commonMain 的 Compose 代码编译不过。
-- **必须先修**：commonMain 增 `com.tencent.kuikly-open:compose:${getKuiklyOhosVersion()}`，并应用 Compose 插件（若 KBA `2.0.21-KBA-010` 无内置 compose 插件，需排查可用版本；此步要能编译过 `:shared` 的 ohosArm64 再继续）。
+### Compose 依赖：已补齐（未验证）
+原先 `shared/build.ohos.gradle.kts` 是 DSL 模板 —— 未应用 Compose 编译器插件，`commonMain` 也只有
+`core`/`core-annotations` 没有 `compose`，因此 ohosArm64 编译必然失败。现已补：
+- `build.ohos.gradle.kts` 根插件块新增 `kotlin("plugin.compose").version("2.0.21-KBA-010")`。
+- `shared/build.ohos.gradle.kts` 应用 `kotlin("plugin.compose")`，并在 `commonMain` 增加
+  `com.tencent.kuikly-open:compose:${Version.getKuiklyOhosVersion()}`。
+
+> ⚠️ **仍未在本机验证**（无 DevEco / ohosArm64 工具链）。第一个要确认的点是
+> `compose-compiler-gradle-plugin:2.0.21-KBA-010` 是否在 KBA 仓库可解析；若不可解析，
+> 退路是在 `settings.ohos.gradle.kts` 的 pluginManagement 里补 KBA 仓库地址，或改用 KBA 内置的 Compose 支持。
+> 另外 `shared/build.ohos.gradle.kts` **仍未应用 `com.tencent.kuikly-open.kuikly`**：
+> 该插件在 ohos 世界的可用版本号与 `core` 的 `2.27.0-2.0.21-ohos` 不同源（缓存里见到的候选是
+> `core-gradle-plugin:2.14.1-2.0.21`），盲填版本号会让 ohos 构建直接挂掉，故留待 DevEco 环境实测后再定。
 
 ### 在 DevEco 上构建运行
 ```bash
@@ -72,13 +82,15 @@ open iosApp.xcodeproj    # Xcode 运行
 
 ### 其余卡点
 - **签名**：`ohosApp/build-profile.json5` 的 `signingConfigs: []` 为空；`runOhosApp.sh` 会校验 `entry-default-signed.hap`，否则报错退出。需在 DevEco 生成签名并回填。
-- **资产**：鸿蒙不内置打包资产。需 `kuiklyCopyAssetsPlugin()` 或手动拷贝 `shared/src/commonMain/assets/common/*` → `ohosApp/entry/src/main/resources/resfile/common/*`。注意：`entry/hvigorfile.ts` 只挂了 `kuiklyCompilePlugin()`，`kuiklyCopyAssetsPlugin` 被 import 但**未注册**。
+- **资产**：鸿蒙不内置打包资产，靠 `kuiklyCopyAssetsPlugin()` 把 `commonMain/assets` 拷进 `resfile`。原先该插件只被 import 未注册（图标全丢），**现已注册**。若实测未生效，退路是手动拷 `shared/src/commonMain/assets/common/*` → `ohosApp/entry/src/main/resources/resfile/common/*`。
 
 ---
 
-## 5. 小程序（本次不做）
+## 5. H5 / 小程序（本次不做）
 
-- `settings.gradle.kts` 有 `include(":miniApp")` 空壳，无任何代码。Kuikly 小程序为 Beta 方案（`./gradlew :miniApp:copyAssets`）。已评估，暂不实施。
+- `settings.gradle.kts` 里的 `include(":h5App")` 与 `include(":miniApp")` 指向的**目录并不存在**，两者均为空壳，无任何代码。`:shared` / `:androidApp` 构建不受影响。
+- `:shared` 已配置 `js(IR) { browser { … } }` 目标（产物名 `nativevue2.js`），但缺 host 工程，因此「H5 可运行」目前不成立。
+- 小程序为 Kuikly Beta 方案（`./gradlew :miniApp:copyAssets`），已评估，暂不实施。
 
 ---
 
@@ -106,3 +118,54 @@ open iosApp.xcodeproj    # Xcode 运行
 - `ModalBottomSheet()` 旧产物缺 3 参数（按 `visible/onDismissRequest/containerColor/scrimColor` 使用）。
 - 动画用 `com.tencent.kuikly.compose.animation.core.*`（fork 包），勿用 `androidx.compose.animation.*`。
 - 包规则：仅 `androidx.compose.runtime.*` 用官方包；其余一律 `com.tencent.kuikly.compose.*`；`setContent` 单独 import。
+
+---
+
+## 9. 数据源与自研后端联调
+
+### 数据源链（客户端）
+
+`StockApis.stocks()` / `StockApis.chart()` 组装固定降级链，**页面不感知走了哪一层**：
+
+| 层 | 行情 | 走势 | 分析 |
+|---|---|---|---|
+| 1 自研后端 | `GET /watchlist` | `GET /chart/{token}?period=` | `GET /analysis/{token}`（带 LLM 缝） |
+| 2 直连腾讯 | `qt.gtimg.cn` | —（后端挂了就走样例） | 本地规则引擎在**真实行情**上推导 |
+| 3 本地样例 | `SampleStockApi` | `SampleChartApi` | `SampleStockApi` |
+
+降级判据是「这一层有没有取到数据」，不是异常；命中层级由数据源自己盖章进 `WatchlistBundle.source`，
+页面据此显示「实时 / 缓存 / 离线」角标与更新时间。
+
+### 起后端
+
+```powershell
+cd D:\Codes\Task1\backend
+$env:GRADLE_USER_HOME = "D:/gradle-user-home"
+.\gradlew.bat run        # 监听 8080
+```
+
+冒烟：
+```powershell
+curl.exe -s "http://127.0.0.1:8080/health"
+curl.exe -s "http://127.0.0.1:8080/chart/sz300750?period=day"
+```
+
+### 让 App 找到后端
+
+`data/BackendClient.kt` 的 `BackendConfig.hostCandidates` 按序探测 `/health`，首个可用者胜出并缓存：
+
+- Android 模拟器 → `http://10.0.2.2:8080`（已列首位，开箱可用）
+- 真机 / 局域网 → 把 `http://<本机IP>:8080` 插到候选首位
+
+全部不可达时自动下沉到直连腾讯，不会白屏。要彻底关掉后端：`StockApis.backendEnabled = false`。
+
+> 真机走 http 明文：已由 `androidApp/src/main/res/xml/network_security_config.xml` 的
+> `cleartextTrafficPermitted="true"` 放行，无需额外配置。
+> 注意 Kuikly `NetworkModule` 对 **JSON 回包直接给出解析后的对象**（只有非 JSON 回包才会包一层
+> `{"data":"<原文>"}`），故 `BackendHttp` 直接读回调的 `data` 字段。
+
+### LLM 开关
+
+后端设 `AI_PROVIDER=llm` + `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` 后，`/watchlist` 的
+`summary.text` 由真实 LLM 产出。App 侧不区分来源——`WatchlistViewModel` 只在后端**没给**摘要时才用
+本地规则重算，所以 LLM 文案不会被悄悄顶掉。

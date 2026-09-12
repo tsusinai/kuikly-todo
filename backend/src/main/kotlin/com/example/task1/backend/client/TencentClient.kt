@@ -11,6 +11,9 @@ import java.nio.charset.Charset
 /** 腾讯行情抓取接缝:只负责取回原始 `~` 串,不解析。query 形如 "sh600519,hk00700"。 */
 interface TencentClient {
     suspend fun fetch(query: String): String
+
+    /** 按绝对 URL 取回原文(K 线/分时走的是另一个 host)。 */
+    suspend fun fetchUrl(url: String): String
 }
 
 /**
@@ -22,7 +25,10 @@ class HttpTencentClient(
     private val httpGet: suspend (url: String, timeoutMs: Long) -> String = ::defaultHttpGet,
 ) : TencentClient {
     override suspend fun fetch(query: String): String =
-        httpGet(config.tencentQuoteUrl + query, config.tencentTimeoutMs)
+        fetchUrl(config.tencentQuoteUrl + query)
+
+    override suspend fun fetchUrl(url: String): String =
+        httpGet(url, config.tencentTimeoutMs)
 }
 
 /** 默认实现:JDK HttpURLConnection,Referer/UA 头,超时,GBK 解码(name 中文)。IO 调度器执行。 */

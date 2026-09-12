@@ -85,6 +85,27 @@ data class AiAnalysisDto(
 @Serializable
 data class ErrorDto(val error: String)
 
+/** 一根 K 线 / 分时点(镜像客户端 `Candle`)。价格单位:分;[volume] 单位:手。 */
+@Serializable
+data class ChartBarDto(
+    val label: String,   // 分时 "10:32";日/周K "09-12";月K "26-09";年K "2026"
+    val open: Long,
+    val high: Long,
+    val low: Long,
+    val close: Long,
+    val volume: Long,
+)
+
+/** `/chart/{token}` 响应(镜像客户端 `StockChartData`)。[avgPrice] 仅分时有值。 */
+@Serializable
+data class ChartResponseDto(
+    val code: String,
+    val period: String,          // intraday | day | week | month | year
+    val prevClose: Long,         // 分
+    val bars: List<ChartBarDto>,
+    val avgPrice: List<Long> = emptyList(),
+)
+
 /** `/health` 探活响应。 */
 @Serializable
 data class HealthDto(val status: String)

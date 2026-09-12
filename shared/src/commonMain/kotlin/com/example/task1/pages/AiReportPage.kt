@@ -16,11 +16,13 @@ import com.example.task1.components.core.AiIconBadge
 import com.example.task1.components.core.AiIconSize
 import com.example.task1.components.AppIcon
 import com.example.task1.components.core.Badge
+import com.example.task1.components.core.ChevronBack
+import com.example.task1.components.core.ErrorStateBox
 import com.example.task1.components.core.ExpandableReveal
 import com.example.task1.data.AiAnalysis
 import com.example.task1.data.AiFactors
 import com.example.task1.data.FactorThresh
-import com.example.task1.data.SampleStockApi
+import com.example.task1.data.StockApis
 import com.example.task1.data.StockItem
 import com.example.task1.theme.AppColors
 import com.example.task1.theme.AppShapes
@@ -59,6 +61,7 @@ import com.tencent.kuikly.compose.ui.platform.LocalConfiguration
 import com.tencent.kuikly.compose.ui.text.font.FontWeight
 import com.tencent.kuikly.compose.ui.unit.dp
 import com.tencent.kuikly.core.annotations.Page
+import com.tencent.kuikly.core.module.NetworkModule
 import com.tencent.kuikly.core.module.RouterModule
 
 /**
@@ -81,16 +84,32 @@ class AiReportPage : ComposeContainer() {
 private val SegStarts = listOf(0f, 0.12f, 0.24f, 0.36f, 0.48f, 0.60f, 0.72f, 0.86f)
 
 @Composable
-fun AiReportScreen(onBack: () -> Unit = {}) {
+fun AiReportScreen(onBack: (() -> Unit)? = null) {
     val activity = LocalActivity.current
+    // 返回出口:未显式传入时直接关当前页,避免「报告页返回键点不动」
+    val navigateBack: () -> Unit = onBack
+        ?: { activity.acquireModule<RouterModule>(RouterModule.MODULE_NAME).closePage() }
+    // 数据源链:自研后端(带 LLM 缝) → 直连腾讯(本地规则引擎推导) → 本地样例
+    fun network(): NetworkModule = activity.acquireModule<NetworkModule>(NetworkModule.MODULE_NAME)
+    val stockApi = remember { StockApis.stocks { network() } }
     var stock by remember { mutableStateOf<StockItem?>(null) }
     var analysis by remember { mutableStateOf<AiAnalysis?>(null) }
+    // 失败态:取不到行情就无从生成分析,必须给出重试出口而不是停在「思考中」
+    var failed by remember { mutableStateOf(false) }
+    var reloadKey by remember { mutableStateOf(0) }
     // 从路由参数读取目标股票 code（由 WatchlistPage.openReport 透传）；缺省回退首只，避免取错股
     val code = LocalConfiguration.current.pageData.params.optString("code")
-    LaunchedEffect(code) {
-        val target = SampleStockApi.fetchStock(code) ?: SampleStockApi.fetchWatchlist().stocks.firstOrNull()
+    LaunchedEffect(code, reloadKey) {
+        failed = false
+        stock = null
+        analysis = null
+        val target = stockApi.fetchStock(code) ?: stockApi.fetchWatchlist().stocks.firstOrNull()
+        if (target == null) {
+            failed = true
+            return@LaunchedEffect
+        }
         stock = target
-        analysis = target?.let { SampleStockApi.fetchAiAnalysis(it.code) }
+        analysis = stockApi.fetchAiAnalysis(target.code)
     }
     // 🔴 单一 progress 贯穿全时间线（多路 animateFloatAsState 级联会卡死，铁律）
     val progress by animateFloatAsState(
@@ -119,8 +138,8 @@ fun AiReportScreen(onBack: () -> Unit = {}) {
                     Spacer(modifier = Modifier.weight(1f))
                     NavCircleButton(onClick = { /* 分享：预留 */ }) { ShareGlyph() }
                     Spacer(modifier = Modifier.width(8.dp))
-                    NavCircleButton(onClick = onBack) {
-                        AppIcon("arrow-right", modifier = Modifier.size(14.dp).rotate(180f))
+                    NavCircleButton(onClick = navigateBack) {
+                        ChevronBack(modifier = Modifier.size(14.dp))
                     }
                 }
                 Spacer(modifier = Modifier.height(12.dp))
@@ -240,6 +259,18 @@ fun AiReportScreen(onBack: () -> Unit = {}) {
                         NewsRow("公司公告：年度分红方案落地，股息率维持高位", "示例资讯 · 昨日 18:00")
                     }
                     Spacer(modifier = Modifier.height(30.dp))
+                }
+            }
+        } else if (failed) {
+            // 取数失败:给出可重试的出口(此前只有「思考中」,用户会一直等下去)
+            item {
+                ReportCard {
+                    ErrorStateBox(
+                        onRetry = { reloadKey++ },
+                        title = "报告生成失败",
+                        hint = "未能取到该股行情,无法生成分析,请检查网络后重试",
+                        minHeight = 300.dp,
+                    )
                 }
             }
         } else {

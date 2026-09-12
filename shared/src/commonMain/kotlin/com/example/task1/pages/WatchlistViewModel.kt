@@ -86,27 +86,46 @@ class WatchlistViewModel(
         if (groups.isEmpty()) "暂无自选股"
         else groups.joinToString("、") { g -> "${g.title.replace("股票建议", "")}${g.stocks.size}只" }
 
-    /** LIVE 契约尚未携带 tags/行业/基准；本地按与 SampleStockApi 相同口径补全，保证联网时 D1/D2 可见。 */
+    /**
+     * 补全实时源缺失的派生字段:tags 与 benchmarkDelta。
+     *
+     * 只填「没有的」——自研后端已经算好行业/基准差/动态标签,若这里无条件覆盖,
+     * 后端(含 LLM)的产出会被本地规则悄悄顶掉,所以两个字段都按「已存在则保留」处理。
+     * summary 同理:后端给了摘要就不再用本地规则重算。
+     */
     private fun enrich(bundle: WatchlistBundle): WatchlistBundle {
         val items = bundle.stocks.map { item ->
             val delta = item.benchmarkDelta
                 ?: deriveBenchmarkDelta(item, MockBenchmark.changePctByMarket[MockBenchmark.of(item.code)])
             val withDelta = item.copy(benchmarkDelta = delta)
-            withDelta.copy(tags = deriveTags(withDelta))
+            withDelta.copy(tags = withDelta.tags.ifEmpty { deriveTags(withDelta) })
         }
-        return bundle.copy(stocks = items, summary = deriveSummary(items, bundle.fetchedAt))
+        val summary = bundle.summary.takeIf { it.text.isNotBlank() } ?: deriveSummary(items, bundle.fetchedAt)
+        return bundle.copy(stocks = items, summary = summary)
     }
 
-    /** 拉取自选：优先实时；实时成功→LIVE，失败有缓存→CACHE，首载无缓存→OFFLINE 兜底。 */
+    /**
+     * 拉取自选。降级链(后端 → 直连腾讯 → 离线样例)已在数据层完成,这里只负责区分
+     * 「拿到了新数据」与「这一轮没拿到、沿用上次」——后者盖章 CACHE,让角标如实反映数据年龄。
+     */
     private suspend fun fetch(): WatchlistBundle = try {
-        val live = api.fetchWatchlist()
-        if (live.stocks.isNotEmpty()) {
-            missingStock = (api as? com.example.task1.data.TencentStockApi)?.lastMissing ?: 0
-            enrich(live).copy(source = DataSource.LIVE)
-        } else {
-            missingStock = 0
-            if (stocks.isNotEmpty()) WatchlistBundle(stocks, fetchedAt, DataSource.CACHE)
-            else SampleStockApi.fetchWatchlist()
+        val bundle = api.fetchWatchlist()
+        when {
+            // 真数据(自研后端 / 直连腾讯):直接用,诚信标注 missing
+            bundle.source != DataSource.OFFLINE -> {
+                missingStock = bundle.missing
+                enrich(bundle)
+            }
+            // 只有离线样例可用:已持有真数据就沿用旧的并盖章 CACHE(角标会显示更新时间),
+            // 否则首载即离线,直接接受样例
+            stocks.isNotEmpty() -> {
+                missingStock = 0
+                WatchlistBundle(stocks, fetchedAt, DataSource.CACHE)
+            }
+            else -> {
+                missingStock = 0
+                bundle
+            }
         }
     } catch (e: kotlinx.coroutines.CancellationException) {
         throw e

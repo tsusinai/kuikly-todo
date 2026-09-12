@@ -59,17 +59,12 @@ class TencentStockApi(
         "688981" to ("sh" to "中芯国际"),
     )
 
-    /** 上次 fetchWatchlist 因字段缺失未能返回的股票数(0=全成功)。供页面做部分失败角标。 */
-    var lastMissing: Int = 0
-        private set
-
     override suspend fun fetchWatchlist(): WatchlistBundle {
         val query = codebook.joinToString(",") { (code, m) -> "${m.first}${code}" }
         val url = "http://qt.gtimg.cn/q=$query"
         val raw = requestRaw(url)
         if (raw == null) {               // 整体网络失败 → 空表,由页面回退离线(缓存/固定数据)
-            lastMissing = codebook.size
-            return WatchlistBundle(emptyList(), nowMillis(), DataSource.OFFLINE)
+            return WatchlistBundle(emptyList(), nowMillis(), DataSource.OFFLINE, missing = codebook.size)
         }
         val items = mutableListOf<StockItem>()
         var missing = 0
@@ -89,8 +84,7 @@ class TencentStockApi(
             val enabled = profile.score >= AiThresh.AI_ENABLED
             items.add(base.copy(aiEnabled = enabled, aiBrief = briefText(profile), aiProfile = profile))
         }
-        lastMissing = missing
-        return WatchlistBundle(items, nowMillis(), DataSource.LIVE)
+        return WatchlistBundle(items, nowMillis(), DataSource.LIVE, missing = missing)
     }
 
     override suspend fun fetchAiAnalysis(code: String): AiAnalysis {

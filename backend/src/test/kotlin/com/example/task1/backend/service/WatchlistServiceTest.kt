@@ -21,6 +21,8 @@ private class FakeClient(private val raw: String? = "v_sh600519=\"a\";") : Tence
         lastQuery = query
         return raw ?: throw RuntimeException("boom")
     }
+
+    override suspend fun fetchUrl(url: String): String = raw ?: throw RuntimeException("boom")
 }
 
 /** 记录收到的 items,返回固定 profile(score 95)的 fake。 */

@@ -66,4 +66,29 @@ class ConfigTest {
     fun `invalid LLM_TIMEOUT_MS throws`() {
         assertFailsWith<IllegalArgumentException> { Config.load(mapOf("LLM_TIMEOUT_MS" to "abc")) }
     }
+
+    @Test
+    fun `chart endpoints default to the real tencent hosts`() {
+        val cfg = Config.load(mapOf())
+        assertEquals(
+            "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=",
+            cfg.tencentKlineUrl,
+        )
+        assertEquals(
+            "https://web.ifzq.gtimg.cn/appstock/app/minute/query?code=",
+            cfg.tencentMinuteUrl,
+        )
+    }
+
+    @Test
+    fun `chart endpoints can be overridden`() {
+        val cfg = Config.load(
+            mapOf(
+                "TENCENT_KLINE_URL" to "http://mirror/kline?param=",
+                "TENCENT_MINUTE_URL" to "http://mirror/minute?code=",
+            )
+        )
+        assertEquals("http://mirror/kline?param=", cfg.tencentKlineUrl)
+        assertEquals("http://mirror/minute?code=", cfg.tencentMinuteUrl)
+    }
 }
