@@ -2,24 +2,36 @@ package com.example.task1.theme
 
 import com.tencent.kuikly.compose.ui.graphics.Color
 
+/**
+ * 配色方案 v2 ——「石墨蓝金融」Graphite Blue
+ *
+ * 设计说明（2026-09-11 重设计）：
+ * - 中性底色由暖粉系转为冷调蓝灰系，营造专业金融质感
+ * - 涨/跌语义色重校准：涨 #E5484D / 跌 #30A46C（A股习惯：红涨绿跌）
+ * - AI 强调色从珊瑚粉转为靛蓝系（AiLight/AiBg/AiBadgeBg/RiskText 统一靛蓝身份）
+ * - CTA 从浅玫瑰改为实色靛蓝（白字对比度 6.3:1，WCAG AA）
+ * - 所有正文色对白底对比度 ≥ 4.5:1（WCAG AA）
+ */
 object AppColors {
-    val RiseRed = Color(0xFFDF0004)        // 涨/价格红
-    val Green = Color(0xFF4A6B5A)          // 强调绿
-    val SubGray = Color(0xFF666666)        // 次级灰 (代码/说明)
-    val MainText = Color(0xFF2D2D2D)       // 主文字
-    val Border = Color(0xFFB5C5C5)         // 边框
-    val PageBg = Color(0xFFFFFFFF)         // 页面/弹层背景(设计稿为纯白)
-    val HeaderBg = Color(0xFFF6DCD7)       // 顶部区背景
-    val AiLight = Color(0xFFE9B8AC)        // AI 渐变起
-    val AiBg = Color(0xFFF6DCD7)           // AI 渐变终
-    val AiBadgeBg = Color(red = 233f / 255f, green = 184f / 255f, blue = 172f / 255f, alpha = 0.15f)
-    val RiseBadgeBg = Color(red = 74f / 255f, green = 107f / 255f, blue = 90f / 255f, alpha = 0.10f)
-    val RiskOrange = Color(0xFFF59E0B)     // 中低风险
-    val RecommendPurple = Color(0xFFA78BFA) // 推荐指数
-    val RiskText = Color(0xFF884D3A)       // 当前评级/高风险(旧)
-    val GaugeHigh = Color(0xFFF0AAB4)      // 风险评估·高风险段浅粉
-    val CtaBg = Color(0xFFF0DCD2)          // CTA 浅玫瑰背景
+    val RiseRed = Color(0xFFE5484D)        // 涨/价格红（Radix Red 9，对白 4.0:1，大字号达标）
+    val Green = Color(0xFF30A46C)          // 强调绿/跌（Radix Green 9）
+    val SubGray = Color(0xFF6B7280)        // 次级灰 (代码/说明，对白 4.8:1)
+    val MainText = Color(0xFF1A1D24)       // 主文字（墨黑，对白 15.9:1）
+    val Border = Color(0xFFE4E7EE)         // 边框（冷调浅灰）
+    val PageBg = Color(0xFFFFFFFF)         // 页面/弹层背景(纯白)
+    val HeaderBg = Color(0xFFEDF1F7)       // 顶部区背景（冷调蓝灰）
+    val ReportBg = Color(0xFFE2E7F0)       // 报告页页底（比 HeaderBg 深一档，让白卡边界清晰）
+    val AiLight = Color(0xFF7C8CF8)        // AI 渐变起（靛蓝亮）
+    val AiBg = Color(0xFFE9EDFF)           // AI 渐变终（靛蓝浅底）
+    val AiBadgeBg = Color(red = 124f / 255f, green = 140f / 255f, blue = 248f / 255f, alpha = 0.12f)
+    val RiseBadgeBg = Color(red = 48f / 255f, green = 164f / 255f, blue = 108f / 255f, alpha = 0.10f)
+    val RiskOrange = Color(0xFFD97706)     // 中低风险/警示（Amber 600，对白 3.3:1 大字号达标）
+    val RecommendPurple = Color(0xFF7048E8) // 推荐指数（Violet 600，对白 5.5:1）
+    val RiskText = Color(0xFF4353D9)       // AI 徽章文字/当前评级（靛蓝 600，对白 6.0:1）
+    val GaugeHigh = Color(0xFFF2B8B5)      // 风险评估·高风险段浅红
+    val CtaBg = Color(0xFF4353D9)          // CTA 实色靛蓝（白字对比 6.3:1）
+    val HandleGray = Color(0xFFD5D9E0)  // 底部抽屉手柄灰
 
     val AiGradient = listOf(AiLight, AiBg)
-    val RecommendGradient = listOf(Color(0xFFA78BFA), Color(0xFFC6B8F6)) // 买入建议进度填充渐变
+    val RecommendGradient = listOf(Color(0xFF7048E8), Color(0xFF9B8AF0)) // 买入建议进度填充渐变
 }

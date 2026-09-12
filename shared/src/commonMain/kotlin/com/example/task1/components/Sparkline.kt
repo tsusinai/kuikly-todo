@@ -1,7 +1,10 @@
 package com.example.task1.components
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import com.example.task1.theme.AppColors
+import com.tencent.kuikly.compose.animation.core.animateFloatAsState
+import com.tencent.kuikly.compose.animation.core.tween
 import com.tencent.kuikly.compose.foundation.Canvas
 import com.tencent.kuikly.compose.ui.Modifier
 import com.tencent.kuikly.compose.ui.graphics.Brush
@@ -20,8 +23,7 @@ import com.tencent.kuikly.compose.ui.graphics.drawscope.Stroke
  * 当 0f <= [progress] < 1f 时，将两条 cubicTo 贝塞尔段各采样为密集折线，并按总长度比例截断路径。
  */
 @Composable
-fun RiseSparkline(modifier: Modifier = Modifier, progress: Float = 1f) {
-    Canvas(modifier = modifier) {
+fun RiseSparkline(modifier: Modifier = Modifier, progress: Float = 1f) {    Canvas(modifier = modifier) {
         val w = size.width
         val h = size.height
         if (w > 0f && h > 0f) {
@@ -31,6 +33,7 @@ fun RiseSparkline(modifier: Modifier = Modifier, progress: Float = 1f) {
             // y(t)：t 从 0(顶部) 到 1(底部) 的线性插值
             fun y(t: Float) = top + (bottom - top) * t
 
+            var fillPath: Path? = null
             val path: Path = if (progress >= 1f) {
                 Path().apply {
                     moveTo(padX, y(1f))
@@ -38,6 +41,13 @@ fun RiseSparkline(modifier: Modifier = Modifier, progress: Float = 1f) {
                     cubicTo(w * 0.26f, y(1f), w * 0.34f, y(0.74f), w * 0.46f, y(0.62f))
                     // 第二段：快速拉升到右上方
                     cubicTo(w * 0.60f, y(0.50f), w * 0.74f, y(0.12f), w - padX, y(0.30f))
+                }.also { full ->
+                    // 高保真：曲线下渐变面积
+                    fillPath = Path().apply {
+                        addPath(full)
+                        lineTo(w - padX, y(1f))
+                        close()
+                    }
                 }
             } else {
                 val p = progress.coerceIn(0f, 1f)
@@ -75,8 +85,25 @@ fun RiseSparkline(modifier: Modifier = Modifier, progress: Float = 1f) {
                     for (i in 1 until keep) {
                         truncated.lineTo(points[i].x, points[i].y)
                     }
+                    fillPath = Path().apply {
+                        addPath(truncated)
+                        lineTo(points[keep - 1].x, y(1f))
+                        lineTo(points[0].x, y(1f))
+                        close()
+                    }
                 }
                 truncated
+            }
+            // 面积：红 22% → 透明，随画线同步生长
+            fillPath?.let { fp ->
+                drawPath(
+                    brush = Brush.verticalGradient(
+                        listOf(AppColors.RiseRed.copy(alpha = 0.22f), AppColors.RiseRed.copy(alpha = 0.02f)),
+                        startY = top,
+                        endY = bottom,
+                    ),
+                    path = fp,
+                )
             }
             drawPath(
                 brush = Brush.linearGradient(listOf(AppColors.RiseRed, AppColors.RiseRed)),   // 红色 #DF0004
@@ -89,4 +116,21 @@ fun RiseSparkline(modifier: Modifier = Modifier, progress: Float = 1f) {
             )
         }
     }
+}
+
+/**
+ * 自驱动动画版 sparkline：[selected] 变化时内部做 0→1 画线补间。
+ *
+ * 性能要点（重组分析 2026-09-11）：此前画线进度 [progress] 在 StockCard 层用 animateFloatAsState
+ * 计算，动画中间值每帧上浮，导致 ExpandedBlock/BottomRow/RiseSparkline 整棵子树每帧重组
+ * （占总重组 85%）。下沉到本组件后，动画中间值只在组件内部流转，
+ * 调用方（ExpandedBlock/BottomRow）只收稳定的 [selected] 布尔，可被 Compose skip。
+ */
+@Composable
+fun RiseSparklineAnimated(modifier: Modifier = Modifier, selected: Boolean) {
+    val progress by animateFloatAsState(
+        targetValue = if (selected) 1f else 0f,
+        animationSpec = tween(220),
+    )
+    RiseSparkline(modifier = modifier, progress = progress)
 }

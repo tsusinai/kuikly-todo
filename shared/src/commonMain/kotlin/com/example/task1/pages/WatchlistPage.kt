@@ -8,6 +8,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import com.example.task1.base.BridgeModule
+import com.example.task1.base.RecompositionProfilerSetup
 import com.example.task1.components.AiBottomBar
 import com.example.task1.components.AiBottomSheet
 import com.example.task1.components.BottomNav
@@ -17,24 +18,15 @@ import com.example.task1.components.MarketOverviewBar
 import com.example.task1.components.StockCard
 import com.example.task1.components.TabBar
 import com.example.task1.data.AiAnalysis
-import com.example.task1.data.AiSummary
 import com.example.task1.data.DataSource
 import com.example.task1.data.FactorThresh
-import com.example.task1.data.GroupDimension
-import com.example.task1.data.MockBenchmark
 import com.example.task1.data.RuleEngineAiProvider
-import com.example.task1.data.SampleStockApi
-import com.example.task1.data.StockGroup
 import com.example.task1.data.StockItem
 import com.example.task1.data.TencentStockApi
-import com.example.task1.data.WatchlistBundle
 import com.example.task1.data.deriveAiAnalysis
-import com.example.task1.data.deriveBenchmarkDelta
-import com.example.task1.data.deriveSummary
-import com.example.task1.data.deriveTags
-import com.example.task1.data.groupStocks
 import com.example.task1.data.nowMillis
 import com.example.task1.theme.AppColors
+import com.example.task1.theme.AppTypography
 import com.tencent.kuikly.compose.ComposeContainer
 import com.tencent.kuikly.compose.setContent
 import com.tencent.kuikly.compose.animation.core.animateFloatAsState
@@ -61,20 +53,25 @@ import com.tencent.kuikly.compose.material3.pullToRefreshItem
 import com.tencent.kuikly.compose.material3.rememberPullToRefreshState
 import com.tencent.kuikly.compose.ui.Alignment
 import com.tencent.kuikly.compose.ui.Modifier
+import com.tencent.kuikly.compose.foundation.Canvas
+import com.tencent.kuikly.compose.foundation.layout.size
+import com.tencent.kuikly.compose.foundation.layout.width
 import com.tencent.kuikly.compose.ui.draw.scale
+import com.tencent.kuikly.compose.ui.geometry.Offset
+import com.tencent.kuikly.compose.ui.graphics.StrokeCap
+import com.tencent.kuikly.compose.ui.graphics.drawscope.Stroke
+import com.tencent.kuikly.compose.ui.text.font.FontWeight
 import com.tencent.kuikly.compose.ui.graphics.Color
 import com.tencent.kuikly.compose.ui.input.pointer.pointerInput
 import com.tencent.kuikly.compose.ui.platform.LocalActivity
 import com.tencent.kuikly.compose.ui.platform.LocalConfiguration
 import com.tencent.kuikly.compose.ui.unit.dp
-import com.tencent.kuikly.compose.ui.unit.sp
 import com.tencent.kuikly.core.annotations.Page
 import com.tencent.kuikly.core.module.Module
 import com.tencent.kuikly.core.module.NetworkModule
 import com.tencent.kuikly.core.module.RouterModule
 import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
-import kotlin.coroutines.cancellation.CancellationException
-import kotlinx.coroutines.delay
+import com.tencent.kuikly.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
 
 /**
@@ -93,6 +90,8 @@ import kotlinx.coroutines.launch
 class WatchlistPage : ComposeContainer() {
     override fun willInit() {
         super.willInit()
+        // 接入 Recomposition Profiler：采集重组性能数据，输出到 cache/KuiklyProfiler/（调试用）
+        RecompositionProfilerSetup.setupAndStart()
         // 进入页面时先把 Compose 内容设置到容器里
         setContent { WatchlistScreen() }
     }
@@ -107,16 +106,17 @@ class WatchlistPage : ComposeContainer() {
 
 @Composable
 fun WatchlistScreen() {
-    // 页面级状态：列表数据、当前 Tab、AI 弹层开关、弹层所需数据
-    var stocks by remember { mutableStateOf<List<StockItem>>(emptyList()) }
-    // 分组维度:长按「分析智窗」呼出维度弹层切换
-    var dimension by remember { mutableStateOf(GroupDimension.ACTION) }
+    val activity = LocalActivity.current
+    // 获取框架级网络模块:本机走腾讯实时行情,失败回退内置样例
+    fun network(): NetworkModule = activity.acquireModule<NetworkModule>(NetworkModule.MODULE_NAME)
+    // 单一腾讯 API 实例:实时拉取 + 弹层 AiAnalysis(派生)复用;注入 RuleEngineAiProvider(演示模型,预留真 LLM)
+    val tencentApi = remember { TencentStockApi(aiProvider = RuleEngineAiProvider, network = { network() }) }
+
+    // ViewModel：承载行情加载/分组/摘要/智窗建议等业务逻辑，UI 只负责渲染与交互
+    val vm: WatchlistViewModel = viewModel { WatchlistViewModel(tencentApi) }
+
+    // 以下为纯 UI 状态（弹层开关、选中、下拉刷新等），保留在 Composable
     var showDimPicker by remember { mutableStateOf(false) }
-    // 主列表数据源三态:OFFLINE(固定数据替身)/LIVE(实时)/CACHE(失败但有缓存);fetchedAt=上次成功更新时间(epoch millis)
-    var dataSource by remember { mutableStateOf(DataSource.OFFLINE) }
-    var fetchedAt by remember { mutableStateOf(0L) }
-    var summary by remember { mutableStateOf<AiSummary?>(null) }
-    var missingStock by remember { mutableStateOf(0) }   // 实时行情「部分失败」的缺失只数(0=全成功),供角标
     var reloadKey by remember { mutableStateOf(0) }
     // 下拉刷新:refreshing 驱动 PullToRefreshState;listState 供 pullToRefreshItem 监测滚顶
     var refreshing by remember { mutableStateOf(false) }
@@ -128,68 +128,7 @@ fun WatchlistScreen() {
     var analysis by remember { mutableStateOf<AiAnalysis?>(null) }
     // 当前被选中（展开）的卡片 id；单击卡片选中，点已选中的收回
     var selectedId by remember { mutableStateOf<String?>(null) }
-    // 「分析智窗」常驻两态：thinking「思考中……」→ advice「全盘建议」
-    var thinking by remember { mutableStateOf(true) }
-    var advice by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
-    val activity = LocalActivity.current
-    // 获取框架级网络模块:本机走腾讯实时行情,失败回退内置样例
-    fun network(): NetworkModule = activity.acquireModule<NetworkModule>(NetworkModule.MODULE_NAME)
-    // 单一腾讯 API 实例:实时拉取 + 弹层 AiAnalysis(派生)复用;注入 RuleEngineAiProvider(演示模型,预留真 LLM)
-    val tencentApi = remember { TencentStockApi(aiProvider = RuleEngineAiProvider, network = { network() }) }
-
-    // 分组摘要文案:按当前维度对分组生成「重点N只」式覆盖描述
-    fun buildAdvice(groups: List<StockGroup>): String =
-        if (groups.isEmpty()) "暂无自选股"
-        else groups.joinToString("、") { g -> "${g.title.replace("股票建议", "")}${g.stocks.size}只" }
-
-    // LIVE 契约尚未携带 tags/行业/基准;本地按与 SampleStockApi 相同口径补全,保证联网时 D1/D2 可见
-    fun enrich(bundle: WatchlistBundle): WatchlistBundle {
-        val items = bundle.stocks.map { item ->
-            val delta = item.benchmarkDelta
-                ?: deriveBenchmarkDelta(item, MockBenchmark.changePctByMarket[MockBenchmark.of(item.code)])
-            val withDelta = item.copy(benchmarkDelta = delta)
-            withDelta.copy(tags = deriveTags(withDelta))
-        }
-        return bundle.copy(stocks = items, summary = deriveSummary(items, bundle.fetchedAt))
-    }
-
-    // 加载自选:优先腾讯实时;代码表固定 7 只。
-    // 实时拉取成功(非空)→ LIVE;失败且已有展示数据(缓存)→ CACHE 保留上次;首载无缓存失败→ OFFLINE 固定数据替身。
-    val fetch: suspend () -> WatchlistBundle = {
-        try {
-            val live = tencentApi.fetchWatchlist()
-            if (live.stocks.isNotEmpty()) {
-                missingStock = tencentApi.lastMissing   // 部分成功时保留成功项 + 角标提示缺失数
-                enrich(live).copy(source = DataSource.LIVE)
-            } else {
-                // 全失败 → 有缓存则 CACHE,否则固定数据 OFFLINE
-                missingStock = 0
-                if (stocks.isNotEmpty()) WatchlistBundle(stocks, fetchedAt, DataSource.CACHE)
-                else SampleStockApi.fetchWatchlist()
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Throwable) {
-            missingStock = 0
-            if (stocks.isNotEmpty()) WatchlistBundle(stocks, fetchedAt, DataSource.CACHE)
-            else SampleStockApi.fetchWatchlist()
-        }
-    }
-
-    // 应用一组拉取结果到页面状态;showThinking 控制首载「思考中」动画(下拉刷新不触发)
-    suspend fun applyFetch(showThinking: Boolean) {
-        if (showThinking) thinking = true
-        val bundle = fetch()
-        stocks = bundle.stocks
-        summary = bundle.summary.takeIf { it.text.isNotBlank() }
-        fetchedAt = bundle.fetchedAt
-        dataSource = bundle.source
-        if (showThinking) {
-            delay(800)
-            thinking = false
-        }
-    }
 
     // epoch millis → "HH:mm:ss"(东八区)。无日期库,纯算术偏移;仅作演示级时间标签
     fun formatTime(ms: Long): String {
@@ -221,28 +160,24 @@ fun WatchlistScreen() {
         activity.acquireModule<RouterModule>(RouterModule.MODULE_NAME).openPage("stockDetail", pj)
     }
 
-    // 弹层内「查看完整报告」：跳转到 AI 报告页
+    // 弹层内「查看完整报告」：跳转到 AI 报告页；透传当前弹层股票 code，供报告页按股取数
     fun openReport() {
         val pj = JSONObject()
+        activeStock?.let { pj.put("code", it.code) }
         activity.acquireModule<RouterModule>(RouterModule.MODULE_NAME).openPage("aiReport", pj)
     }
 
     // 进入页面/点重试:思考中→(实时/缓存/兜底)加载→显示
     LaunchedEffect(reloadKey) {
-        applyFetch(showThinking = true)
+        vm.load(showThinking = true)
     }
 
-    // 智窗建议文案跟随当前维度(切维度/换数据时重新生成摘要)
-    LaunchedEffect(dimension, stocks) {
-        advice = buildAdvice(groupStocks(stocks, dimension))
-    }
+    // 智窗建议已由 VM 统一维护（vm.advice），无需在 UI 层重算。
 
     // 顶部状态栏高度（dp）：让 HeaderBg 背景覆盖到状态栏顶端、内容避开状态栏
     val statusBarHeight = LocalConfiguration.current.statusBarHeight
 
-    // 分组值一次性计算:按当前维度对自选股分组(LazyColumn 组头 + 组内卡片复用同一记忆值)
-    val groups = remember(stocks, dimension) { groupStocks(stocks, dimension) }
-
+    // 「分析智窗」展开态：点击智窗切换（收起=提示文案，展开=全盘建议全文）
     Column(modifier = Modifier.fillMaxSize().background(AppColors.PageBg)) {
         // 顶部 header：搜索框 + Tab 栏（该区域固定不随列表滚动；背景延伸进状态栏）
         Column(
@@ -253,20 +188,36 @@ fun WatchlistScreen() {
                 .padding(bottom = 8.dp),
         ) {
             Row(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                // 搜索框：空白色圆角胶囊 + 右侧「搜索」动作（设计稿 18:241 = 白色圆角矩形 + 右侧「搜索」文字，无占位符/无图标）
+                // 搜索框：白色胶囊 + 放大镜图形 + 占位文案（点击无动作，预留搜索功能）
+                Row(
+                    modifier = Modifier.weight(1f).height(38.dp)
+                        .background(Color.White, RoundedCornerShape(19.dp))
+                        .border(1.dp, AppColors.Border, RoundedCornerShape(19.dp))
+                        .padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    SearchGlyph()
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(text = "搜索股票、代码", color = AppColors.SubGray, fontSize = AppTypography.Body)
+                }
+                // 「搜索」动作：实色靛蓝胶囊按钮，与 AI 主色呼应
                 Box(
-                    modifier = Modifier.weight(1f).height(34.dp)
-                        .background(Color.White, RoundedCornerShape(17.dp))
-                        .border(1.dp, AppColors.Border, RoundedCornerShape(17.dp)),
-                )
-                Text(text = "搜索", color = AppColors.MainText, fontSize = 14.sp, modifier = Modifier.padding(start = 10.dp).clickable { })
+                    modifier = Modifier.padding(start = 10.dp)
+                        .background(AppColors.CtaBg, RoundedCornerShape(17.dp))
+                        .clickable { }
+                        .padding(horizontal = 16.dp, vertical = 7.dp),
+                ) {
+                    Text(text = "搜索", color = Color.White, fontSize = AppTypography.Body, fontWeight = FontWeight.SemiBold)
+                }
             }
             TabBar(selected = selectedTab, onSelect = { selectedTab = it })
         }
 
+        // 主体区（Box）：列表铺满，「分析智窗」悬浮其底部上方
+        Box(modifier = Modifier.weight(1f)) {
         // 主体列表：pull-to-refresh + 状态横幅 + 市场摘要 + 分组卡片；超出可视区预加载 3 项避免滚动空白
         LazyColumn(
-            modifier = Modifier.weight(1f).fillMaxWidth(),
+            modifier = Modifier.fillMaxSize(),
             state = listState,
             beyondBoundsItemCount = 3,
         ) {
@@ -276,13 +227,13 @@ fun WatchlistScreen() {
                 onRefresh = {
                     refreshing = true
                     scope.launch {
-                        applyFetch(showThinking = false)
+                        vm.refresh()
                         refreshing = false
                     }
                 },
                 scrollState = listState,
             )
-            if (dataSource == DataSource.OFFLINE && stocks.isNotEmpty()) {
+            if (vm.dataSource == DataSource.OFFLINE && vm.stocks.isNotEmpty()) {
                 item {
                     Box(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp)
@@ -291,10 +242,10 @@ fun WatchlistScreen() {
                             .padding(horizontal = 10.dp, vertical = 8.dp),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Text(text = "实时行情暂不可用，展示示例数据（点此重试）", color = AppColors.RiskText, fontSize = 12.sp)
+                        Text(text = "实时行情暂不可用，展示示例数据（点此重试）", color = AppColors.RiskOrange, fontSize = AppTypography.Caption)
                     }
                 }
-            } else if (dataSource == DataSource.CACHE) {
+            } else if (vm.dataSource == DataSource.CACHE) {
                 item {
                     Box(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp)
@@ -303,10 +254,10 @@ fun WatchlistScreen() {
                             .padding(horizontal = 10.dp, vertical = 8.dp),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Text(text = "行情非实时（更新于 ${formatTime(fetchedAt)}），点此重试", color = AppColors.RiskText, fontSize = 12.sp)
+                        Text(text = "行情非实时（更新于 ${formatTime(vm.fetchedAt)}），点此重试", color = AppColors.RiskOrange, fontSize = AppTypography.Caption)
                     }
                 }
-            } else if (missingStock > 0) {
+            } else if (vm.missingStock > 0) {
                 item {
                     Box(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp)
@@ -315,33 +266,21 @@ fun WatchlistScreen() {
                             .padding(horizontal = 10.dp, vertical = 8.dp),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Text(text = "部分行情获取失败（$missingStock），点此重试", color = AppColors.RiskText, fontSize = 12.sp)
-                    }
-                }
-            }
-            item {
-                summary?.let { s ->
-                    val stale = s.stale || (nowMillis() - s.generatedAt > FactorThresh.STALE_MS)
-                    Box(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp)
-                        .background(if (stale) AppColors.HeaderBg else AppColors.AiLight, RoundedCornerShape(8.dp))
-                        .padding(10.dp)) {
-                        Column {
-                            Text("AI 摘要 · ${formatTime(s.generatedAt)}", color = AppColors.MainText, fontSize = 12.sp)
-                            Spacer(Modifier.height(4.dp))
-                            Text(s.text, color = AppColors.MainText, fontSize = 14.sp)
-                            if (stale) Text("基于较旧数据,建议下拉刷新", color = AppColors.RiskText, fontSize = 11.sp)
-                        }
+                        Text(text = "部分行情获取失败（${vm.missingStock}），点此重试", color = AppColors.RiskOrange, fontSize = AppTypography.Caption)
                     }
                 }
             }
             item { MarketOverviewBar() }
             item { Spacer(modifier = Modifier.height(10.dp)) }
-            groups.forEach { group ->
-                item(key = "h-${dimension.name}-${group.title}") { GroupHeader(group) }
+            vm.groups.forEach { group ->
+                item(key = "h-${vm.dimension.name}-${group.title}") { GroupHeader(group) }
                 items(group.stocks, key = { it.id }) { item ->
                     // 每张卡片：单击选中/取消（仅一张展开）；长按拖拽入口已移除
                     var cardPressed by remember { mutableStateOf(false) }
                     val cardScale by animateFloatAsState(if (cardPressed) 0.985f else 1f, tween(120))
+                    // lambda 用 remember(item) 缓存：避免父级重组时每次新建 lambda 导致 StockCard 子树无法 skip（重组风暴根因之一）
+                    val onOpenAi = remember(item) { { openPanel(item) } }
+                    val onEnterDetail = remember(item) { { openDetail(item) } }
                     Box(
                         modifier = Modifier
                             .scale(cardScale)
@@ -352,32 +291,39 @@ fun WatchlistScreen() {
                                         selectedId = if (selectedId == item.id) null else item.id
                                         haptic("light")   // 点选轻震
                                     },
+                                    // 长按股票：直接弹出 AI 分析抽屉（免先展开再点建议行）
+                                    onLongPress = {
+                                        haptic("medium")
+                                        openPanel(item)
+                                    },
                                 )
                             },
                     ) {
                         StockCard(
                             item = item,
                             selected = selectedId == item.id,
-                            onOpenAi = { openPanel(item) },
-                            onEnterDetail = { openDetail(item) },
+                            onOpenAi = onOpenAi,
+                            onEnterDetail = onEnterDetail,
                         )
                     }
                 }
             }
-            item { Spacer(modifier = Modifier.height(50.dp)) }
+            item { Spacer(modifier = Modifier.height(110.dp)) }   // 底部悬浮「分析智窗」的避让空间
         }
 
-        // 底部固定区域：「分析智窗」栏（常驻：思考中→全盘建议）+ 底部导航
-        Column(modifier = Modifier.background(AppColors.PageBg)) {
-            AiBottomBar(
-                advice = advice,
-                thinking = thinking,
-                dimensionLabel = dimension.label,
-                onLongPress = { showDimPicker = true },
-            )
-            BottomNav(selected = "行情")
-        }
-    }
+        // 「分析智窗」标准组件（非受控模式：展开态由组件自管理），悬浮在列表上方
+        AiBottomBar(
+            advice = vm.advice,
+            thinking = vm.thinking,
+            dimensionLabel = vm.dimension.label,
+            onLongPress = { showDimPicker = true },
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 6.dp),
+        )
+        }   // Box（主体区）结束
+
+        // 底部导航（固定页底；必须在根 Column 内，否则会被当作独立根节点叠到页面顶部）
+        BottomNav(selected = "行情")
+    }   // Column（根布局）结束
 
     // AI 分析弹层：由 visible 布尔值控制开关；点遮罩/「×」触发 onDismissRequest
     if (showSheet && activeStock != null && analysis != null) {
@@ -400,12 +346,34 @@ fun WatchlistScreen() {
             scrimColor = Color(0x66000000),
         ) {
             DimensionPickerSheet(
-                current = dimension,
+                current = vm.dimension,
                 onSelect = { dim ->
-                    dimension = dim
+                    vm.onDimensionChange(dim)
                     showDimPicker = false
                 },
             )
         }
+    }
+}
+
+/** 搜索放大镜图形：Canvas 手绘（圆环 + 手柄），无需图标资产。 */
+@Composable
+private fun SearchGlyph() {
+    Canvas(modifier = Modifier.size(15.dp)) {
+        val strokeW = 1.6.dp.toPx()
+        val r = size.minDimension / 2f - strokeW
+        drawCircle(
+            color = AppColors.SubGray,
+            radius = r,
+            center = Offset(size.width * 0.42f, size.height * 0.42f),
+            style = Stroke(width = strokeW),
+        )
+        drawLine(
+            color = AppColors.SubGray,
+            start = Offset(size.width * 0.42f + r * 0.62f, size.height * 0.42f + r * 0.62f),
+            end = Offset(size.width - strokeW, size.height - strokeW),
+            strokeWidth = strokeW,
+            cap = StrokeCap.Round,
+        )
     }
 }

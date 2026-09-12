@@ -2,10 +2,16 @@ package com.example.task1.components
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import com.example.task1.base.Utils
+import com.example.task1.components.core.AiIconBadge
+import com.example.task1.components.core.AiIconSize
+import com.example.task1.components.core.Badge
+import com.example.task1.components.core.CardSurface
+import com.example.task1.components.core.Chip
+import com.example.task1.components.core.StatCell
 import com.example.task1.data.StockItem
 import com.example.task1.theme.AppColors
+import com.example.task1.theme.AppTypography
 import com.tencent.kuikly.compose.animation.AnimatedVisibility
 import com.tencent.kuikly.compose.animation.core.Spring
 import com.tencent.kuikly.compose.animation.core.animateFloatAsState
@@ -14,7 +20,6 @@ import com.tencent.kuikly.compose.animation.core.tween
 import com.tencent.kuikly.compose.animation.expandVertically
 import com.tencent.kuikly.compose.animation.shrinkVertically
 import com.tencent.kuikly.compose.foundation.background
-import com.tencent.kuikly.compose.foundation.border
 import com.tencent.kuikly.compose.foundation.clickable
 import com.tencent.kuikly.compose.foundation.layout.Arrangement
 import com.tencent.kuikly.compose.foundation.layout.Box
@@ -26,12 +31,9 @@ import com.tencent.kuikly.compose.foundation.layout.height
 import com.tencent.kuikly.compose.foundation.layout.padding
 import com.tencent.kuikly.compose.foundation.layout.size
 import com.tencent.kuikly.compose.foundation.layout.width
-import com.tencent.kuikly.compose.foundation.shape.RoundedCornerShape
 import com.tencent.kuikly.compose.material3.Text
 import com.tencent.kuikly.compose.ui.Alignment
 import com.tencent.kuikly.compose.ui.Modifier
-import com.tencent.kuikly.compose.ui.draw.shadow
-import com.tencent.kuikly.compose.ui.graphics.Color
 import com.tencent.kuikly.compose.ui.graphics.graphicsLayer
 import com.tencent.kuikly.compose.ui.text.font.FontWeight
 import com.tencent.kuikly.compose.ui.text.style.TextOverflow
@@ -54,26 +56,24 @@ fun StockCard(
     onOpenAi: () -> Unit,
     onEnterDetail: () -> Unit,
 ) {
-    val cardShape = RoundedCornerShape(12.dp)
-    // 分时走势曲线「绘制进度」随选中做 0→1 补间，用于卡片展开时的画线效果
-    val sparkProgress by animateFloatAsState(
-        targetValue = if (selected) 1f else 0f,
-        animationSpec = tween(220),
-    )
-    Column(
+    // 分时走势的画线动画已下沉到 RiseSparklineAnimated 内部（重组优化 2026-09-11）：
+    // 动画中间值不再流经 StockCard/ExpandedBlock/BottomRow，避免展开态子树每帧重组
+    CardSurface(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 10.dp) // 卡片距屏幕边缘 10dp，与设计稿、沪深大盘摘要区对齐
-            .padding(vertical = 5.dp)
-            .shadow(if (selected) 2.dp else 0.dp, cardShape, clip = false) // 选中时轻微投影提亮
-            .background(Color.White, cardShape)
-            .border(1.dp, if (selected) AppColors.AiLight else AppColors.Border, cardShape)
-            .padding(12.dp)
+            .padding(vertical = 5.dp),
+        selected = selected,
     ) {
         TopRow(item)
         if (item.tags.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
-            TagRow(item.tags)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                item.tags.forEach { tag -> Chip(text = tag) }
+            }
         }
         // 建议行：重点股（aiEnabled=true）compact 直接露出，普通股仅展开后露出；仅在展开态可点 → 弹 AI 面板
         if (item.aiEnabled || selected) {
@@ -98,11 +98,12 @@ fun StockCard(
                 shrinkTowards = Alignment.Top,
             ),
         ) {
-            ExpandedBlock(item, selected, onEnterDetail, sparkProgress)
+            ExpandedBlock(item, selected, onEnterDetail)
         }
     }
 }
 
+/** 顶行：左侧名称+代码，右侧现价+涨跌额+涨跌幅徽章（红涨绿跌）。 */
 @Composable
 private fun TopRow(item: StockItem) {
     Row(
@@ -111,73 +112,50 @@ private fun TopRow(item: StockItem) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(text = item.name, color = AppColors.MainText, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Text(text = item.name, color = AppColors.MainText, fontSize = AppTypography.Title, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.width(8.dp))
-            Text(text = item.code, color = AppColors.SubGray, fontSize = 12.sp)
+            Text(text = item.code, color = AppColors.SubGray, fontSize = AppTypography.Caption)
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(text = Utils.formatPrice2(item.price), color = AppColors.RiseRed, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Text(text = Utils.formatPrice2(item.price), color = AppColors.RiseRed, fontSize = AppTypography.Title, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.width(8.dp))
             // 涨跌额（带符号），如 +43.62；涨红跌绿
             Text(
                 text = Utils.formatSignedPrice2(item.change),
                 color = if (item.change >= 0) AppColors.RiseRed else AppColors.Green,
-                fontSize = 12.sp,
+                fontSize = AppTypography.Caption,
                 fontWeight = FontWeight.Bold,
             )
             Spacer(modifier = Modifier.width(8.dp))
-            ChangeBadge(item.changePct)
+            Badge(text = Utils.formatPercent(item.changePct), color = if (item.changePct >= 0) AppColors.RiseRed else AppColors.Green)
         }
     }
 }
 
+/** 选中时展开的详情块：高/低/开 三指标与「点击查看详情」同一行（分时走势图已按需求移除）。 */
 @Composable
-private fun ChangeBadge(changePct: Double) {
-    Box(
-        modifier = Modifier
-            .background(AppColors.RiseBadgeBg, RoundedCornerShape(4.dp))
-            .padding(horizontal = 6.dp, vertical = 2.dp)
+private fun ExpandedBlock(item: StockItem, selected: Boolean, onEnterDetail: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
+        StatCell(label = "高", value = Utils.formatPrice2(item.high), valueColor = AppColors.RiseRed, modifier = Modifier.weight(1f).then(staggerCellModifier(selected, 0)))
+        StatCell(label = "低", value = Utils.formatPrice2(item.low), valueColor = AppColors.Green, modifier = Modifier.weight(1f).then(staggerCellModifier(selected, 1)))
+        StatCell(label = "开", value = Utils.formatPrice2(item.open), valueColor = AppColors.RiseRed, modifier = Modifier.weight(1f).then(staggerCellModifier(selected, 2)))
+        // 与指标同一行的「查看详情」入口（靛蓝主色，呼应 AI/CTA）
         Text(
-            text = Utils.formatPercent(changePct),
-            color = if (changePct >= 0) AppColors.RiseRed else AppColors.Green,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold,
+            text = "点击查看详情 ›",
+            color = AppColors.CtaBg,
+            fontSize = AppTypography.BodySmall,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier
+                .clickable(onClick = onEnterDetail)
+                .padding(start = 8.dp),
         )
     }
 }
 
-/** D2 标签行：圆角描边小胶囊横向排列。Tags 来自 deriveTags(与后端镜像)。 */
-@Composable
-private fun TagRow(tags: List<String>) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        tags.forEach { tag ->
-            Box(
-                modifier = Modifier
-                    .background(Color.White, RoundedCornerShape(4.dp))
-                    .border(1.dp, AppColors.AiLight, RoundedCornerShape(4.dp))
-                    .padding(horizontal = 6.dp, vertical = 2.dp),
-            ) {
-                Text(text = tag, color = AppColors.MainText, fontSize = 11.sp)
-            }
-        }
-    }
-}
-
-/** 选中时展开的详情块：高/低/开 + 分时走势/点击查看详情（底部同一行）。aiBrief 已移至卡片常驻区。 */
-@Composable
-private fun ExpandedBlock(item: StockItem, selected: Boolean, onEnterDetail: () -> Unit, sparkProgress: Float) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Spacer(modifier = Modifier.height(10.dp))
-        HighLowOpenRow(item, selected)
-        Spacer(modifier = Modifier.height(12.dp))
-        BottomRow(onEnterDetail, sparkProgress)
-    }
-}
-
+/** 建议行：AI 徽章 + 一句话建议 + 依据信号；[clickable] 控制是否可点（仅在展开态可点，避免误触）。 */
 @Composable
 private fun AiBriefRow(item: StockItem, onOpenAi: () -> Unit, clickable: Boolean = true) {
     Row(
@@ -186,37 +164,16 @@ private fun AiBriefRow(item: StockItem, onOpenAi: () -> Unit, clickable: Boolean
             .clickable(enabled = clickable, onClick = onOpenAi),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            modifier = Modifier
-                .size(20.dp)
-                .background(AppColors.AiLight, RoundedCornerShape(10.dp)),
-            contentAlignment = Alignment.Center,
-        ) {
-            AppIcon("sparkles", modifier = Modifier.size(14.dp))
-        }
+        AiIconBadge(size = AiIconSize.Small)
         Spacer(modifier = Modifier.width(8.dp))
-        Text(text = item.aiBrief, color = AppColors.SubGray, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-    }
-}
-
-@Composable
-private fun HighLowOpenRow(item: StockItem, selected: Boolean) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        HloCell(
-            label = "高", value = Utils.formatPrice2(item.high), valueColor = AppColors.RiseRed,
-            modifier = staggerCellModifier(selected, 0),
-        )
-        HloCell(
-            label = "低", value = Utils.formatPrice2(item.low), valueColor = AppColors.Green,
-            modifier = staggerCellModifier(selected, 1),
-        )
-        HloCell(
-            label = "开", value = Utils.formatPrice2(item.open), valueColor = AppColors.RiseRed,
-            modifier = staggerCellModifier(selected, 2),
+        Text(text = item.aiBrief, color = AppColors.SubGray, fontSize = AppTypography.BodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Spacer(modifier = Modifier.width(6.dp))
+        // 依据信号：让建议可解释（如「依据：MACD金叉」）
+        Text(
+            text = "依据：${item.aiProfile.signal}",
+            color = AppColors.AiLight,
+            fontSize = AppTypography.Tiny,
+            maxLines = 1,
         )
     }
 }
@@ -229,35 +186,4 @@ private fun staggerCellModifier(selected: Boolean, index: Int): Modifier {
         animationSpec = tween(180, delayMillis = index * 60),
     )
     return Modifier.graphicsLayer { translationY = slide }
-}
-
-/** 高/低/开 单元格：标签 light + 值 bold（对照 stock-info-bar 32:2）。 */
-@Composable
-private fun HloCell(label: String, value: String, valueColor: Color, modifier: Modifier = Modifier) {
-    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
-        Text(text = label, color = AppColors.MainText, fontSize = 14.sp, fontWeight = FontWeight.Light)
-        Spacer(modifier = Modifier.width(4.dp))
-        Text(text = value, color = valueColor, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-    }
-}
-
-/** 底部行：左侧「分时走势」sparkline，右侧「点击查看详情」（对照 stock-info-bar 32:2 同一水平线）。 */
-@Composable
-private fun BottomRow(onEnterDetail: () -> Unit, sparkProgress: Float) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        RiseSparkline(modifier = Modifier.weight(1f).height(28.dp), progress = sparkProgress)
-        Spacer(modifier = Modifier.width(8.dp))
-        Text(text = "分时走势", color = AppColors.SubGray, fontSize = 12.sp)
-        Spacer(modifier = Modifier.width(12.dp))
-        Text(
-            text = "点击查看详情",
-            color = AppColors.MainText,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Light,
-            modifier = Modifier.clickable(onClick = onEnterDetail),
-        )
-    }
 }

@@ -14,6 +14,11 @@ android {
         versionName = "1.0"
     }
 
+    // AGP 8.x 默认关闭 BuildConfig 生成；KRUncaughtExceptionHandlerAdapter 用到 BuildConfig.DEBUG，需显式开启
+    buildFeatures {
+        buildConfig = true
+    }
+
     buildTypes {
         getByName("release") {
             isMinifyEnabled = false
