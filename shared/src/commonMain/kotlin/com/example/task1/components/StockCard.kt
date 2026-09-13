@@ -8,17 +8,14 @@ import com.example.task1.components.core.AiIconSize
 import com.example.task1.components.core.Badge
 import com.example.task1.components.core.CardSurface
 import com.example.task1.components.core.Chip
+import com.example.task1.components.core.ExpandableReveal
 import com.example.task1.components.core.StatCell
 import com.example.task1.data.StockItem
 import com.example.task1.theme.AppColors
 import com.example.task1.theme.AppTypography
-import com.tencent.kuikly.compose.animation.AnimatedVisibility
-import com.tencent.kuikly.compose.animation.core.Spring
+import com.tencent.kuikly.compose.animation.core.FastOutSlowInEasing
 import com.tencent.kuikly.compose.animation.core.animateFloatAsState
-import com.tencent.kuikly.compose.animation.core.spring
 import com.tencent.kuikly.compose.animation.core.tween
-import com.tencent.kuikly.compose.animation.expandVertically
-import com.tencent.kuikly.compose.animation.shrinkVertically
 import com.tencent.kuikly.compose.foundation.background
 import com.tencent.kuikly.compose.foundation.clickable
 import com.tencent.kuikly.compose.foundation.layout.Arrangement
@@ -28,13 +25,13 @@ import com.tencent.kuikly.compose.foundation.layout.Row
 import com.tencent.kuikly.compose.foundation.layout.Spacer
 import com.tencent.kuikly.compose.foundation.layout.fillMaxWidth
 import com.tencent.kuikly.compose.foundation.layout.height
+import com.tencent.kuikly.compose.foundation.layout.offset
 import com.tencent.kuikly.compose.foundation.layout.padding
 import com.tencent.kuikly.compose.foundation.layout.size
 import com.tencent.kuikly.compose.foundation.layout.width
 import com.tencent.kuikly.compose.material3.Text
 import com.tencent.kuikly.compose.ui.Alignment
 import com.tencent.kuikly.compose.ui.Modifier
-import com.tencent.kuikly.compose.ui.graphics.graphicsLayer
 import com.tencent.kuikly.compose.ui.text.font.FontWeight
 import com.tencent.kuikly.compose.ui.text.style.TextOverflow
 import com.tencent.kuikly.compose.ui.unit.dp
@@ -46,8 +43,12 @@ import com.tencent.kuikly.compose.ui.unit.sp
  * TopRow（名称/代码+价/涨跌）常驻；建议行显示条件为 [StockItem.aiEnabled] 或 [selected]：
  * 重点股（aiEnabled=true）compact 直接露出建议，普通股仅在展开后露出。建议行仅在展开态可点，
  * 因此所有卡片（含重点股）的 AI 弹窗入口都要先展开、再点建议行。
- * [selected] 为 true 时卡片边框高亮，并用 AnimatedVisibility(expandVertically) 平滑展开详情块
- * （高/低/开 + 分时走势/点击查看详情）；否则仅呈现紧凑态（TopRow + 建议行）。
+ * [selected] 为 true 时卡片边框高亮，并平滑展开「详情块」（高/低/开 + 点击查看详情）；
+ * 否则仅呈现紧凑态（TopRow [+ 重点股建议行]）。
+ *
+ * 收放动画由**单一进度值** [expand] 驱动（[ExpandableReveal]），**不要**换回
+ * `AnimatedVisibility`/`expandVertically`：那套过渡在 Kuikly 上不逐帧执行，一整段收放会塌成
+ * 一帧跳变——普通股收起时表现为「AI 提示词瞬间消失、下方行情瞬移补位」。
  */
 @Composable
 fun StockCard(
@@ -56,6 +57,11 @@ fun StockCard(
     onOpenAi: () -> Unit,
     onEnterDetail: () -> Unit,
 ) {
+    // 收起/展开的唯一驱动源：建议行与详情块共用它，两边才会同步收放，不会各弹各的。
+    val expand by animateFloatAsState(
+        targetValue = if (selected) 1f else 0f,
+        animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing),
+    )
     // 分时走势的画线动画已下沉到 RiseSparklineAnimated 内部（重组优化 2026-09-11）：
     // 动画中间值不再流经 StockCard/ExpandedBlock/BottomRow，避免展开态子树每帧重组
     CardSurface(
@@ -76,28 +82,22 @@ fun StockCard(
             }
         }
         // 建议行：重点股（aiEnabled=true）compact 直接露出，普通股仅展开后露出；仅在展开态可点 → 弹 AI 面板
-        if (item.aiEnabled || selected) {
+        if (item.aiEnabled) {
             Spacer(modifier = Modifier.height(10.dp))
             AiBriefRow(item, onOpenAi, clickable = selected)
+        } else {
+            // 普通股收起态没有建议行，所以它必须跟着 expand 一起收放：
+            // 早先这里写的是裸 `if (item.aiEnabled || selected)`，收起首帧整行就被摘掉、高度当场归零，
+            // 于是提示词「啪」地消失、下方详情块瞬移补位。间隔也放进动画里，避免收起后残留 10dp 空白。
+            ExpandableReveal(progress = expand) {
+                Column {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    AiBriefRow(item, onOpenAi, clickable = selected)
+                }
+            }
         }
         // 仅「高/低/开 + 分时走势/点击查看详情」随选中做 expandVertically/shrinkVertically
-        AnimatedVisibility(
-            visible = selected,
-            enter = expandVertically(
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioLowBouncy,
-                    stiffness = Spring.StiffnessMedium,
-                ),
-                expandFrom = Alignment.Top,
-            ),
-            exit = shrinkVertically(
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioNoBouncy,
-                    stiffness = Spring.StiffnessMedium,
-                ),
-                shrinkTowards = Alignment.Top,
-            ),
-        ) {
+        ExpandableReveal(progress = expand) {
             ExpandedBlock(item, selected, onEnterDetail)
         }
     }
@@ -183,12 +183,17 @@ private fun AiBriefRow(item: StockItem, onOpenAi: () -> Unit, clickable: Boolean
     }
 }
 
-/** 单格「自下而上升入」的错峰补间：index 0/1/2 依次延迟 60ms。 */
+/**
+ * 单格「自下而上升入」的错峰补间：index 0/1/2 依次延迟 60ms。
+ *
+ * 位移走 `offset(y = Dp)` 值参数，而不是 `graphicsLayer { translationY = ... }`——
+ * 后者在 Kuikly 上不逐帧执行，lambda 只在组合那一下求值，位移会停在首帧值上不再变化。
+ */
 @Composable
 private fun staggerCellModifier(selected: Boolean, index: Int): Modifier {
     val slide by animateFloatAsState(
         targetValue = if (selected) 0f else 10f,
         animationSpec = tween(180, delayMillis = index * 60),
     )
-    return Modifier.graphicsLayer { translationY = slide }
+    return Modifier.offset(y = slide.dp)
 }
