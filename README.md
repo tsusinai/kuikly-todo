@@ -143,6 +143,9 @@ flowchart TD
 
 ### Android（已验证可跑）
 
+> 只想装来看看：[下载 APK](https://github.com/tsusinai/kuikly-todo/releases/latest/download/androidApp-debug.apk)
+> （13.9 MB · debug 签名，安装时提示「未知来源」属正常；打开即进自选行情页）
+
 ```bash
 # 只编译业务库（最快的回归门禁）
 ./gradlew :shared:compileDebugKotlinAndroid
