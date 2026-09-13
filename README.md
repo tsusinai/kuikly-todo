@@ -3,7 +3,7 @@
 > **OpenSourceTalent 课题作业 · Task 1**
 > 基于 **Kuikly**（Kotlin Multiplatform 跨端框架）+ **Kuikly Compose DSL** 的股票行情应用。
 > 一套 Kotlin 代码实现自选行情、个股详情、走势图表与 AI 智能分析；行情来自腾讯，
-> **AI 分析由自研 Ktor 后端统一产出，客户端只搬算好的字段**。
+> **AI 分析由自建 Ktor 后端统一产出（规则引擎打分 + 可选 LLM 文案），客户端只搬算好的字段**。
 
 ---
 
@@ -24,9 +24,9 @@
 > 后端 27 个文件 / ~2.2k 行，含 91 个单元测试。
 
 1. **主路径客户端零解析**——上游行情是 `~` 分隔的 GBK 文本，字段散落在几十个下标里。
-   这些脏活收在自研后端，App 只搬已经算好的字段；客户端仅在「后端不可用、退回直连」
+   这些脏活收在自建后端，App 只搬已经算好的字段；客户端仅在「后端不可用、退回直连」
    这一级降级里保留一份等价解析。
-2. **数据源可降级**——自研后端 → 直连腾讯 → 本地样例，三级链路任意一级挂掉，页面都还能用，
+2. **数据源可降级**——自建后端 → 直连腾讯 → 本地样例，三级链路任意一级挂掉，页面都还能用，
    并且**明确告诉用户当前看到的是实时、缓存还是样例**。
 3. **AI 结论可解释**——不是甩一句「建议买入」，而是给出「评分 / 依据信号 / 因子明细 / 风险等级 /
    目标价与止损价」，并且**同一份推导在后端和客户端各有一份镜像实现**，后端不可用时结论不会变形。
@@ -75,7 +75,7 @@ flowchart TD
         PG --> CP --> DT
     end
 
-    subgraph Backend["backend/ · 自研后端（Kotlin + Ktor，独立 Gradle 工程）"]
+    subgraph Backend["backend/ · 自建后端（Kotlin + Ktor，独立 Gradle 工程）"]
         RT["Routes · /watchlist · /analysis/{token} · /chart/{token} · /health"]
         SV["Service · 编排与契约装配"]
         QP["QuoteParser · 字段解析 / 单位换算 / GBK"]
@@ -97,7 +97,7 @@ flowchart TD
 
 | 级别 | 行情 `/watchlist` `/analysis` | 走势 `/chart` |
 |---|---|---|
-| 1 | 自研后端 | 自研后端 |
+| 1 | 自建后端 | 自建后端 |
 | 2 | 直连腾讯 `qt.gtimg.cn` | —— |
 | 3 | 本地样例数据 | 本地样例数据（沿用当前行情，保证同页同价） |
 
@@ -154,7 +154,7 @@ flowchart TD
 adb install -r -t androidApp/build/outputs/apk/debug/androidApp-debug.apk
 ```
 
-直连腾讯即可看到真实行情；想走自研后端再启动下一节的服务，并把端口透传给设备：
+直连腾讯即可看到真实行情；想走自建后端再启动下一节的服务，并把端口透传给设备：
 `adb reverse tcp:8080 tcp:8080`。
 
 ### 后端（可选，但推荐）
@@ -194,7 +194,7 @@ Task1/
 ├── androidApp/                   # Android host（已跑通）
 ├── iosApp/                       # iOS host（SwiftUI + CocoaPods）
 ├── ohosApp/                      # 鸿蒙 host（ArkTS）
-├── backend/                      # 自研后端（Kotlin + Ktor），独立 Gradle 工程
+├── backend/                      # 自建后端（Kotlin + Ktor），独立 Gradle 工程
 ├── docs/                         # 运行手册、设计规范、实现计划、重组分析
 └── rules/                        # Kuikly Compose / DSL 编码规范
 ```

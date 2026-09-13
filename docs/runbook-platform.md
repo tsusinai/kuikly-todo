@@ -121,7 +121,7 @@ open iosApp.xcodeproj    # Xcode 运行
 
 ---
 
-## 9. 数据源与自研后端联调
+## 9. 数据源与自建后端联调
 
 ### 数据源链（客户端）
 
@@ -129,7 +129,7 @@ open iosApp.xcodeproj    # Xcode 运行
 
 | 层 | 行情 | 走势 | 分析 |
 |---|---|---|---|
-| 1 自研后端 | `GET /watchlist` | `GET /chart/{token}?period=` | `GET /analysis/{token}`（带 LLM 缝） |
+| 1 自建后端 | `GET /watchlist` | `GET /chart/{token}?period=` | `GET /analysis/{token}`（带 LLM 缝） |
 | 2 直连腾讯 | `qt.gtimg.cn` | —（后端挂了就走样例） | 本地规则引擎在**真实行情**上推导 |
 | 3 本地样例 | `SampleStockApi` | `SampleChartApi` | `SampleStockApi` |
 

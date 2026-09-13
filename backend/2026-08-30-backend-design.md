@@ -6,7 +6,7 @@
 
 ## 定位
 
-自研后端代理:腾讯 `qt.gtimg.cn` → 后端(解析 + 分析) → 客户端 UI。客户端**不直连腾讯、零解析**。本仓库现有 App 是 `shared`(Kuikly KMP);本设计新增独立 `backend/`(JVM 服务)。
+自建后端代理:腾讯 `qt.gtimg.cn` → 后端(解析 + 分析) → 客户端 UI。客户端**不直连腾讯、零解析**。本仓库现有 App 是 `shared`(Kuikly KMP);本设计新增独立 `backend/`(JVM 服务)。
 
 **本轮回范围(已确认)**:行情代理 `/watchlist` + AI 分析(规则引擎 + LLM 缝) + 弹层 `/analysis/:code` + 运维基建(/health、日志、Docker)。
 
