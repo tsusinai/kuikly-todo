@@ -49,11 +49,15 @@ object AiThresh {
     const val STOP_RATIO = 0.05         // 弹层止损价 = 现价 ×(1-5%)
 }
 
-enum class GroupDimension(val label: String) {
-    ACTION("操作建议"),
-    SIGNAL("信号题材"),
-    SCORE("评分分层"),
-    SCENARIO("操作场景"),
+/**
+ * 分组维度。[desc] 是给用户的「这个维度到底怎么分」一句话，展示在维度选择弹层里，
+ * 与 [label] 一起构成维度的**单一事实源**——UI 不再自己编词。
+ */
+enum class GroupDimension(val label: String, val desc: String) {
+    ACTION("操作建议", "按 AI 给出的操作建议聚合"),
+    SIGNAL("信号题材", "按技术信号与题材聚合"),
+    SCORE("评分分层", "按 AI 评分档位聚合"),
+    SCENARIO("操作场景", "按建议的持有场景聚合"),
 }
 
 data class StockGroup(val title: String, val stocks: List<StockItem>)

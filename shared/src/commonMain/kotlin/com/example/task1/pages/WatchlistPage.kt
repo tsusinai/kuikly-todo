@@ -17,6 +17,9 @@ import com.example.task1.components.GroupHeader
 import com.example.task1.components.MarketOverviewBar
 import com.example.task1.components.StockCard
 import com.example.task1.components.TabBar
+import com.example.task1.components.core.EmptyStateBox
+import com.example.task1.components.core.LoadingStateBox
+import com.example.task1.components.core.AppearIn
 import com.example.task1.data.AiAnalysis
 import com.example.task1.data.DataSource
 import com.example.task1.data.FactorThresh
@@ -44,7 +47,7 @@ import com.tencent.kuikly.compose.foundation.layout.fillMaxWidth
 import com.tencent.kuikly.compose.foundation.layout.height
 import com.tencent.kuikly.compose.foundation.layout.padding
 import com.tencent.kuikly.compose.foundation.lazy.LazyColumn
-import com.tencent.kuikly.compose.foundation.lazy.items
+import com.tencent.kuikly.compose.foundation.lazy.itemsIndexed
 import com.tencent.kuikly.compose.foundation.lazy.rememberLazyListState
 import com.tencent.kuikly.compose.foundation.shape.RoundedCornerShape
 import com.tencent.kuikly.compose.material3.ModalBottomSheet
@@ -95,6 +98,9 @@ private const val ANALYZE_MAX_MS = 2500L
  * 只能超时摘节点，否则弹层会卡在「visible=false 但一直显示」。
  */
 private const val SHEET_EXIT_MS = 260L
+
+/** 首载/空态占位高度：撑住列表区，等真实内容进来时版面跳动最小。 */
+private val LIST_STATE_HEIGHT = 220.dp
 
 /**
  * 行情 / 自选列表页（主屏）。
@@ -318,7 +324,17 @@ fun WatchlistScreen() {
                 },
                 scrollState = listState,
             )
-            if (vm.dataSource == DataSource.OFFLINE && vm.stocks.isNotEmpty()) {
+            if (vm.stocks.isEmpty()) {
+                // 首载：还没有任何行情可渲染。此前这块是整片空白，用户看不出是在加载还是坏了；
+                // 真加载完还是空的（fetch 的兜底链保证不会）则给空态，避免留下一个永久转圈。
+                item {
+                    if (vm.thinking) {
+                        LoadingStateBox(text = "正在获取行情…", minHeight = LIST_STATE_HEIGHT)
+                    } else {
+                        EmptyStateBox(text = "暂无自选行情", minHeight = LIST_STATE_HEIGHT)
+                    }
+                }
+            } else if (vm.dataSource == DataSource.OFFLINE) {
                 item {
                     Box(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp)
@@ -355,46 +371,86 @@ fun WatchlistScreen() {
                     }
                 }
             }
-            // 顶部摘要读 vm.overview（与列表同源，随刷新一起变），不再是写死的演示数字
-            item { MarketOverviewBar(overview = vm.overview) }
+            // 顶部摘要读 vm.overview（与列表同源，随刷新一起变），不再是写死的演示数字。
+            // overview 为空 ⟺ 列表为空（首载中），那时只画加载态，不让占位条和提示同屏打架。
+            val overview = vm.overview
+            if (overview != null) {
+                item { MarketOverviewBar(overview = overview) }
+            }
             item { Spacer(modifier = Modifier.height(10.dp)) }
+            // 行情入场：组头与卡片按「组头 → 组内卡片」的扁平次序错峰淡入。
+            // 序号在建列表时就定好（组合期不能自增：item lambda 每次重组都会跑），
+            // 所以用每组的基数 + itemsIndexed 的组内下标，而不是在 lambda 里累计。
+            var flatCursor = 0
             vm.groups.forEach { group ->
-                item(key = "h-${vm.dimension.name}-${group.title}") { GroupHeader(group) }
-                items(group.stocks, key = { it.id }) { item ->
+                val headerIndex = flatCursor
+                flatCursor += 1
+                val cardBase = flatCursor
+                flatCursor += group.stocks.size
+                item(key = "h-${vm.dimension.name}-${group.title}") {
+                    AppearIn(index = headerIndex) { GroupHeader(group) }
+                }
+                itemsIndexed(group.stocks, key = { _, stock -> stock.id }) { inGroup, item ->
                     // 每张卡片：单击选中/取消（仅一张展开）；长按拖拽入口已移除
                     var cardPressed by remember { mutableStateOf(false) }
                     val cardScale by animateFloatAsState(if (cardPressed) 0.985f else 1f, tween(120))
                     // lambda 用 remember(item) 缓存：避免父级重组时每次新建 lambda 导致 StockCard 子树无法 skip（重组风暴根因之一）
                     val onOpenAi = remember(item) { { openPanel(item) } }
                     val onEnterDetail = remember(item) { { openDetail(item) } }
-                    Box(
-                        modifier = Modifier
-                            .scale(cardScale)
-                            .pointerInput(item) {
-                                detectTapGestures(
-                                    onPress = { cardPressed = true; tryAwaitRelease(); cardPressed = false },
-                                    onTap = {
-                                        selectedId = if (selectedId == item.id) null else item.id
-                                        haptic("light")   // 点选轻震
-                                    },
-                                    // 长按股票：直接弹出 AI 分析抽屉（免先展开再点建议行）
-                                    onLongPress = {
-                                        haptic("medium")
-                                        openPanel(item)
-                                    },
-                                )
-                            },
-                    ) {
-                        StockCard(
-                            item = item,
-                            selected = selectedId == item.id,
-                            onOpenAi = onOpenAi,
-                            onEnterDetail = onEnterDetail,
-                        )
+                    AppearIn(index = cardBase + inGroup) {
+                        Box(
+                            modifier = Modifier
+                                .scale(cardScale)
+                                .pointerInput(item) {
+                                    detectTapGestures(
+                                        onPress = { cardPressed = true; tryAwaitRelease(); cardPressed = false },
+                                        onTap = {
+                                            selectedId = if (selectedId == item.id) null else item.id
+                                            haptic("light")   // 点选轻震
+                                        },
+                                        // 长按股票：直接弹出 AI 分析抽屉（免先展开再点建议行）
+                                        onLongPress = {
+                                            haptic("medium")
+                                            openPanel(item)
+                                        },
+                                    )
+                                },
+                        ) {
+                            StockCard(
+                                item = item,
+                                selected = selectedId == item.id,
+                                onOpenAi = onOpenAi,
+                                onEnterDetail = onEnterDetail,
+                            )
+                        }
                     }
                 }
             }
-            item { Spacer(modifier = Modifier.height(110.dp)) }   // 底部悬浮「分析智窗」的避让空间
+            // 列表收尾：有数据时给一条「已经到底了」分隔提示（首载/空态不显示，免得跟加载态打架）。
+            // 下方 110dp 仍是底部悬浮「分析智窗」的避让空间，同时把提示顶到悬浮条上方，不被遮住。
+            item {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(top = 18.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    if (vm.stocks.isNotEmpty()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Box(modifier = Modifier.weight(1f).height(1.dp).background(AppColors.Border))
+                            Text(
+                                text = "已经到底了",
+                                color = AppColors.SubGray,
+                                fontSize = AppTypography.Caption,
+                                modifier = Modifier.padding(horizontal = 10.dp),
+                            )
+                            Box(modifier = Modifier.weight(1f).height(1.dp).background(AppColors.Border))
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(110.dp))
+                }
+            }
         }
 
         // 「分析智窗」标准组件（非受控模式：展开态由组件自管理），悬浮在列表上方
@@ -445,7 +501,8 @@ fun WatchlistScreen() {
         ModalBottomSheet(
             visible = showDimPicker,
             onDismissRequest = { showDimPicker = false },
-            containerColor = AppColors.PageBg,
+            // 透明容器：顶角圆角由 DimensionPickerSheet 自绘（ModalBottomSheet 没有 shape 参数）
+            containerColor = Color.Transparent,
             scrimColor = Color(0x66000000),
         ) {
             // 同上：返回键注册在弹层内容内，才能先于库的 DialogContent 处理

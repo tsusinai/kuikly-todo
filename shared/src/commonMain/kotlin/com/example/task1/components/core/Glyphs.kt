@@ -52,3 +52,24 @@ fun ChevronDown(
         drawLine(color, elbow, Offset(size.width - half, size.height * 0.34f), stroke, StrokeCap.Round)
     }
 }
+
+/**
+ * 勾选图形（选中态），Canvas 手绘。
+ *
+ * 与 [ChevronBack] 同一考虑：不依赖字体字符 —— `✓` 在不同字体下粗细、大小、基线都不受控，
+ * 而且颜色不能跟着主题走。这里由 [color] 决定，尺寸由外层 modifier 决定。
+ */
+@Composable
+fun CheckMark(
+    modifier: Modifier = Modifier,
+    color: Color = AppColors.CtaBg,
+    strokeWidth: Dp = 1.6.dp,
+) {
+    Canvas(modifier = modifier) {
+        val stroke = strokeWidth.toPx()
+        val half = stroke / 2f
+        val elbow = Offset(size.width * 0.40f, size.height - half)
+        drawLine(color, Offset(half, size.height * 0.52f), elbow, stroke, StrokeCap.Round)
+        drawLine(color, elbow, Offset(size.width - half, half), stroke, StrokeCap.Round)
+    }
+}

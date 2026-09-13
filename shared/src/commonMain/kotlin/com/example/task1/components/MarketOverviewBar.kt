@@ -1,7 +1,11 @@
 package com.example.task1.components
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import com.example.task1.base.Utils
 import com.example.task1.data.MarketOverview
 import com.example.task1.theme.AppColors
@@ -26,30 +30,33 @@ import com.tencent.kuikly.compose.ui.text.font.FontWeight
 import com.tencent.kuikly.compose.ui.unit.dp
 
 /** 涨跌条动画时长：够看清比例变化，又不至于让刷新后的数字等太久。 */
-private const val BAR_ANIM_MS = 650
+private const val BAR_ANIM_MS = 420
 private const val BAR_HEIGHT_DP = 8
 
 /**
  * 市场大盘摘要栏：合计市值变动、收盘状态、数据日期，以及涨/跌家数与对应红绿进度条。
  *
- * [overview] 由列表同一次拉取推导（见 [com.example.task1.data.deriveMarketOverview]）：
- * 传 null = 尚未拿到行情，按占位渲染（"—" + 中性底条），行高保持一致、不跳版。
+ * [overview] 由列表同一次拉取推导（见 [com.example.task1.data.deriveMarketOverview]）。
+ * 没有数据时**不要调用本组件**——列表区由页面统一渲染加载态/空态，
+ * 免得占位条与加载提示同屏打架。
  *
  * 涨跌条：底色是跌（绿），上层红条宽度 = 涨占比，比例变化走 [animateFloatAsState]。
- * 进入页面时列表还是空的 → 首帧比例恒为 0，这条动画顺带充当入场展开，不需要额外的 ready 开关。
+ * 本组件只在数据到位后才被组合，所以首帧拿到的就是终值——入场展开要靠 [ready] 这一帧延迟：
+ * 先按 0 组合，再由 effect 把目标值抬到真实比例，动画才会从 0 展开。
  */
 @Composable
-fun MarketOverviewBar(overview: MarketOverview?, modifier: Modifier = Modifier) {
-    val netChange = overview?.netCapChangeYuan
+fun MarketOverviewBar(overview: MarketOverview, modifier: Modifier = Modifier) {
+    var ready by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { ready = true }
+    val netChange = overview.netCapChangeYuan
     val amountColor = when {
-        netChange == null -> AppColors.SubGray
         netChange > 0L -> AppColors.RiseRed
         netChange < 0L -> AppColors.Green
         else -> AppColors.MainText
     }
-    val hasBreadth = (overview?.riseCount ?: 0) + (overview?.fallCount ?: 0) > 0
+    val hasBreadth = overview.riseCount + overview.fallCount > 0
     val riseFraction by animateFloatAsState(
-        targetValue = overview?.riseFraction ?: 0f,
+        targetValue = if (ready) overview.riseFraction else 0f,
         animationSpec = tween(durationMillis = BAR_ANIM_MS, easing = FastOutSlowInEasing),
     )
 
@@ -60,19 +67,19 @@ fun MarketOverviewBar(overview: MarketOverview?, modifier: Modifier = Modifier) 
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = if (netChange == null) "—" else Utils.formatSignedYuan(netChange),
+                text = Utils.formatSignedYuan(netChange),
                 color = amountColor,
                 fontSize = AppTypography.H1,
                 fontWeight = FontWeight.Bold,
             )
             Text(
-                text = overview?.statusText ?: "加载中",
+                text = overview.statusText,
                 color = AppColors.MainText,
                 fontSize = AppTypography.BodySmall,
             )
         }
         Text(
-            text = overview?.dateText?.takeIf { it.isNotEmpty() } ?: "—",
+            text = overview.dateText,
             color = AppColors.MainText,
             fontSize = AppTypography.BodySmall,
         )
@@ -80,11 +87,11 @@ fun MarketOverviewBar(overview: MarketOverview?, modifier: Modifier = Modifier) 
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Text(text = countLabel("涨", overview?.riseCount), color = AppColors.RiseRed, fontSize = AppTypography.BodySmall)
-            if (overview != null && overview.flatCount > 0) {
+            Text(text = "涨${overview.riseCount}", color = AppColors.RiseRed, fontSize = AppTypography.BodySmall)
+            if (overview.flatCount > 0) {
                 Text(text = "平${overview.flatCount}", color = AppColors.SubGray, fontSize = AppTypography.BodySmall)
             }
-            Text(text = countLabel("跌", overview?.fallCount), color = AppColors.Green, fontSize = AppTypography.BodySmall)
+            Text(text = "跌${overview.fallCount}", color = AppColors.Green, fontSize = AppTypography.BodySmall)
         }
         Spacer(modifier = Modifier.height(4.dp))
         // 涨(红) / 跌(绿)：左红右绿。无涨跌样本时底色退成中性灰，免得看着像「全跌」
@@ -103,6 +110,3 @@ fun MarketOverviewBar(overview: MarketOverview?, modifier: Modifier = Modifier) 
         }
     }
 }
-
-/** "涨23"；数据未到时不臆造 0，直接给占位破折号。 */
-private fun countLabel(prefix: String, count: Int?): String = if (count == null) "$prefix—" else "$prefix$count"
