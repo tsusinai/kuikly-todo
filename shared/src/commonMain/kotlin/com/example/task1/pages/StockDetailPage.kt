@@ -112,28 +112,27 @@ fun StockDetailScreen() {
     LaunchedEffect(code, reloadKey) {
         stockFailed = false
         stock = null
+        charts = emptyMap()
+        chartFailed = emptySet()
         val loaded = stockApi.fetchStock(code)
         stock = loaded
         stockFailed = loaded == null
-    }
-    // 各周期之间没有依赖,并行拉:首屏「分时」通常先到,其余周期在后台补齐
-    LaunchedEffect(code, reloadKey) {
-        charts = emptyMap()
-        chartFailed = emptySet()
+        // 行情先到手再并行拉各周期:兜底走势要拿这份行情当基准价,否则图上的价位
+        // (样例基价)会和上方行情区(实时价)对不上。周期之间仍无依赖,并行拉。
         coroutineScope {
             for (target in ChartPeriod.entries) {
                 launch {
-                    val loaded = try {
-                        chartApi.fetchChart(code, target)
+                    val data = try {
+                        chartApi.fetchChart(code, target, quote = loaded)
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Throwable) {
                         null
                     }
-                    if (loaded == null || loaded.candles.isEmpty()) {
+                    if (data == null || data.candles.isEmpty()) {
                         chartFailed = chartFailed + target
                     } else {
-                        charts = charts + (target to loaded)
+                        charts = charts + (target to data)
                     }
                 }
             }

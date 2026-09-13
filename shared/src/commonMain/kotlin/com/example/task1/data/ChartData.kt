@@ -80,9 +80,13 @@ data class StockChartData(
 /**
  * 图表数据源。接后端代理时替换实现即可（如 GET /chart/{code}?period=day），
  * 页面与组件只依赖 [StockChartData]，不关心数据来源。
+ *
+ * [quote] 是「这只票当前的实时行情」，只给**本地兜底**用：兜底走势是围着基准价现造的，
+ * 若改用样例固定基价，就会造出与页面顶部行情对不上的图（图上 1856.00、页头却是 1275.16）。
+ * 有后端时它被忽略（后端的走势本来就取自实时行情）。
  */
 interface ChartApi {
-    suspend fun fetchChart(code: String, period: ChartPeriod): StockChartData
+    suspend fun fetchChart(code: String, period: ChartPeriod, quote: StockItem? = null): StockChartData
 }
 
 /**
@@ -95,8 +99,12 @@ object SampleChartApi : ChartApi {
 
     private val MA_WINDOWS = listOf(5, 10, 20)
 
-    override suspend fun fetchChart(code: String, period: ChartPeriod): StockChartData {
-        val item = SampleStockApi.fetchStock(code) ?: return StockChartData(period, emptyList(), 0L)
+    override suspend fun fetchChart(code: String, period: ChartPeriod, quote: StockItem?): StockChartData {
+        // 优先用调用方给出的实时行情做基准:它决定了「昨收/开/高/低/最新」四个锚点,
+        // 也决定了图上最后一根与页面顶部的行情是否说得上是同一只票
+        val item = quote
+            ?: SampleStockApi.fetchStock(code)
+            ?: return StockChartData(period, emptyList(), 0L)
         val data = if (period == ChartPeriod.INTRADAY) intraday(item) else kline(item, period)
         // 分时也带均线:分时图上的均线是分钟收盘价的 5/10/20 均,和 K 线走同一套算法
         return data.copy(ma = movingAverages(data.candles))

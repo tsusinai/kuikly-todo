@@ -21,17 +21,25 @@ import com.tencent.kuikly.compose.ui.graphics.drawscope.Stroke
  *
  * [progress] 表示曲线完成的百分比（0f..1f）。默认 [progress] = 1f 时绘制完整曲线（不改变原有渲染）；
  * 当 0f <= [progress] < 1f 时，将两条 cubicTo 贝塞尔段各采样为密集折线，并按总长度比例截断路径。
+ *
+ * [up] 决定走势方向与配色：[up] = true 为红升（沿用原曲线），false 为绿降（曲线沿纵向镜像）。
+ * 存在的意义是**让曲线与结论一致**——「短期承压回落」的票不该配一条红色上升曲线。
  */
 @Composable
-fun RiseSparkline(modifier: Modifier = Modifier, progress: Float = 1f) {    Canvas(modifier = modifier) {
+fun RiseSparkline(modifier: Modifier = Modifier, progress: Float = 1f, up: Boolean = true) {
+    Canvas(modifier = modifier) {
         val w = size.width
         val h = size.height
         if (w > 0f && h > 0f) {
             val padX = w * 0.05f
             val top = h * 0.14f
             val bottom = h * 0.88f
-            // y(t)：t 从 0(顶部) 到 1(底部) 的线性插值
-            fun y(t: Float) = top + (bottom - top) * t
+            val lineColor = if (up) AppColors.RiseRed else AppColors.Green
+            // y(t)：t 从 0(顶部) 到 1(底部) 的线性插值；下跌走势整体沿 (top+bottom) 镜像
+            fun y(t: Float): Float {
+                val v = top + (bottom - top) * t
+                return if (up) v else (top + bottom) - v
+            }
 
             var fillPath: Path? = null
             val path: Path = if (progress >= 1f) {
@@ -98,15 +106,15 @@ fun RiseSparkline(modifier: Modifier = Modifier, progress: Float = 1f) {    Canv
             fillPath?.let { fp ->
                 drawPath(
                     brush = Brush.verticalGradient(
-                        listOf(AppColors.RiseRed.copy(alpha = 0.22f), AppColors.RiseRed.copy(alpha = 0.02f)),
-                        startY = top,
-                        endY = bottom,
+                        listOf(lineColor.copy(alpha = 0.22f), lineColor.copy(alpha = 0.02f)),
+                        startY = if (up) top else bottom,
+                        endY = if (up) bottom else top,
                     ),
                     path = fp,
                 )
             }
             drawPath(
-                brush = Brush.linearGradient(listOf(AppColors.RiseRed, AppColors.RiseRed)),   // 红色 #DF0004
+                brush = Brush.linearGradient(listOf(lineColor, lineColor)),   // 涨 #E5484D / 跌 #30A46C
                 path = path,
                 style = Stroke(
                     width = (h * 0.045f).coerceIn(2f, 4f),
@@ -127,10 +135,10 @@ fun RiseSparkline(modifier: Modifier = Modifier, progress: Float = 1f) {    Canv
  * 调用方（ExpandedBlock/BottomRow）只收稳定的 [selected] 布尔，可被 Compose skip。
  */
 @Composable
-fun RiseSparklineAnimated(modifier: Modifier = Modifier, selected: Boolean) {
+fun RiseSparklineAnimated(modifier: Modifier = Modifier, selected: Boolean, up: Boolean = true) {
     val progress by animateFloatAsState(
         targetValue = if (selected) 1f else 0f,
         animationSpec = tween(220),
     )
-    RiseSparkline(modifier = modifier, progress = progress)
+    RiseSparkline(modifier = modifier, progress = progress, up = up)
 }

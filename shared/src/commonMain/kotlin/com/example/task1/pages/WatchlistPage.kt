@@ -26,6 +26,7 @@ import com.example.task1.data.deriveAiAnalysis
 import com.example.task1.data.nowMillis
 import com.example.task1.theme.AppColors
 import com.example.task1.theme.AppTypography
+import com.tencent.kuikly.compose.BackHandler
 import com.tencent.kuikly.compose.ComposeContainer
 import com.tencent.kuikly.compose.setContent
 import com.tencent.kuikly.compose.animation.core.animateFloatAsState
@@ -71,7 +72,29 @@ import com.tencent.kuikly.core.module.NetworkModule
 import com.tencent.kuikly.core.module.RouterModule
 import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
 import com.tencent.kuikly.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+
+/** AI 抽屉「分析中」下限：保住「AI 确实在算」的感知，也避免一闪而过。 */
+private const val ANALYZE_MIN_MS = 900L
+
+/** AI 抽屉「分析中」上限：后端卡住时不能把用户钉在思考态，超时就用本地结论揭晓。 */
+private const val ANALYZE_MAX_MS = 2500L
+
+/**
+ * AI 抽屉退场静默窗口。
+ *
+ * 退场动画由 ModalBottomSheet 内部的 visibleState 驱动（时长 250ms，与之对齐）。关闭时先
+ * 把 visible 置 false 让动画跑起来，节点要等动画播完（库回调 onDismissRequest）才摘，
+ * 摘早了动画会被掐断，表现为「啪」地切走。
+ *
+ * 这个常量只用于兜底：入场动画还没播完就按返回时，里层的 MutableTransitionState 无法反向
+ * （库的 LaunchedEffect 只在 currentState 已 settled 时才接受关闭），动画永远不会收尾，
+ * 只能超时摘节点，否则弹层会卡在「visible=false 但一直显示」。
+ */
+private const val SHEET_EXIT_MS = 260L
 
 /**
  * 行情 / 自选列表页（主屏）。
@@ -122,9 +145,18 @@ fun WatchlistScreen() {
     val listState = rememberLazyListState()
     val pullState = rememberPullToRefreshState(isRefreshing = refreshing)
     var selectedTab by remember { mutableStateOf("自选") }
-    var showSheet by remember { mutableStateOf(false) }
+    // AI 抽屉拆成两个正交状态，才能既有退场动画又不重放：
+    //  - sheetVisible：传给 ModalBottomSheet，驱动库的进出场动画
+    //  - sheetPresent：节点是否留在组合树。必须留到退场动画播完，否则动画被掐断（直接切走）
+    //  - closeRequested：已请求关闭，用来区分 onDismissRequest 的两种来源（遮罩点击 / 动画播完）
+    var sheetVisible by remember { mutableStateOf(false) }
+    var sheetPresent by remember { mutableStateOf(false) }
+    var closeRequested by remember { mutableStateOf(false) }
     var activeStock by remember { mutableStateOf<StockItem?>(null) }
     var analysis by remember { mutableStateOf<AiAnalysis?>(null) }
+    // AI 抽屉的分析阶段：由后台校正取数的真实进度驱动（不是写死的固定延时）
+    var analyzing by remember { mutableStateOf(false) }
+    var analyzeJob by remember { mutableStateOf<Job?>(null) }
     // 当前被选中（展开）的卡片 id；单击卡片选中，点已选中的收回
     var selectedId by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -142,13 +174,67 @@ fun WatchlistScreen() {
     }
 
     // 单击卡片：展开卡片的选区（点已选中的收回）；按压缩放动画由 cardPressed 驱动
+    /**
+     * 打开 AI 抽屉：本地结论先出（秒开、离线可用、与列表同源），再在后台向后端校正。
+     *
+     * 校正走既有的 [com.example.task1.data.RoutedStockApi.fetchAiAnalysis]（后端 /analysis →
+     * 直连腾讯+本地推导 → 样例兜底，降级由路由层负责，不会抛异常）。总时长夹在
+     * [ANALYZE_MIN_MS] 与 [ANALYZE_MAX_MS] 之间：太快没有「在算」的感知，太慢不能钉住用户。
+     * 后端当前是规则引擎的逐字复刻，数值多半与本地一致 → 不替换、不闪烁；接真 LLM 后这里自动生效。
+     */
     fun openPanel(stock: StockItem) {
         haptic("light")   // 弹层打开的轻震
         activeStock = stock
-        scope.launch {
-            // 由已加载的个股实时行情+画像派生弹层 AiAnalysis(与卡片口径一致,不再二次网络请求)
-            analysis = deriveAiAnalysis(stock)
-            showSheet = true
+        // 本地结论立即落地：抽屉不等网络就弹出（离线也能用）
+        analysis = deriveAiAnalysis(stock)
+        closeRequested = false
+        sheetPresent = true
+        sheetVisible = true
+        analyzing = true
+        analyzeJob?.cancel()
+        analyzeJob = scope.launch {
+            val startedAt = nowMillis()
+            val remote = withTimeoutOrNull(ANALYZE_MAX_MS) { stockApi.fetchAiAnalysis(stock.code) }
+            val elapsed = nowMillis() - startedAt
+            if (elapsed < ANALYZE_MIN_MS) delay(ANALYZE_MIN_MS - elapsed)
+            // 抽屉仍开着 + 仍是同一只票 + 结果确实不同，三者齐备才替换
+            if (remote != null && sheetVisible && activeStock?.code == stock.code && remote != analysis) {
+                analysis = remote
+            }
+            if (activeStock?.code == stock.code) analyzing = false
+        }
+    }
+
+    /**
+     * 关闭 AI 抽屉（返回键 / 关闭钮 / 点遮罩共用）。
+     *
+     * 先把 visible 置 false 让库的退场动画跑起来，节点等动画播完（库回调 onDismissRequest）再摘。
+     * 同时**立刻**取消校正任务：任务在退场窗口内回写 analyzing/analysis 会触发重组，把原生
+     * 窗口重新顶出来 —— 这正是「收回又弹出」和「加载中按返回又弹出」的成因。
+     */
+    fun closeSheet() {
+        if (closeRequested) return
+        closeRequested = true
+        analyzeJob?.cancel()
+        sheetVisible = false
+    }
+
+    /** 摘掉弹层节点：退场动画已播完（库回调），或兜底超时。 */
+    fun finishClose() {
+        closeRequested = false
+        sheetVisible = false
+        sheetPresent = false
+    }
+
+    // 兜底摘除：入场动画还没播完就按返回时，里层 MutableTransitionState 无法反向，动画永远
+    // 不会收尾，只能超时摘节点。正常路径下 onDismissRequest 会先一步摘掉，这里不会触发。
+    // key 带上 sheetPresent：重新打开（sheetVisible=true）会让这个 effect 重启并取消待执行摘除。
+    LaunchedEffect(sheetVisible, sheetPresent) {
+        if (!sheetVisible && sheetPresent) {
+            delay(SHEET_EXIT_MS)
+            if (sheetPresent && !sheetVisible) {
+                finishClose()
+            }
         }
     }
 
@@ -269,7 +355,8 @@ fun WatchlistScreen() {
                     }
                 }
             }
-            item { MarketOverviewBar() }
+            // 顶部摘要读 vm.overview（与列表同源，随刷新一起变），不再是写死的演示数字
+            item { MarketOverviewBar(overview = vm.overview) }
             item { Spacer(modifier = Modifier.height(10.dp)) }
             vm.groups.forEach { group ->
                 item(key = "h-${vm.dimension.name}-${group.title}") { GroupHeader(group) }
@@ -325,14 +412,31 @@ fun WatchlistScreen() {
     }   // Column（根布局）结束
 
     // AI 分析弹层：由 visible 布尔值控制开关；点遮罩/「×」触发 onDismissRequest
-    if (showSheet && activeStock != null && analysis != null) {
+    if (sheetPresent && activeStock != null && analysis != null) {
         ModalBottomSheet(
-            visible = showSheet,
-            onDismissRequest = { showSheet = false },
-            containerColor = AppColors.PageBg,
+            visible = sheetVisible,
+            // 两种来源：点遮罩（还没请求关闭）→ 开始关闭；退场动画播完（已在关闭中）→ 摘节点
+            onDismissRequest = {
+                if (closeRequested) finishClose() else closeSheet()
+            },
+            // 透明容器：顶部圆角由 AiBottomSheet 自绘（ModalBottomSheet 没有 shape 参数）
+            containerColor = Color.Transparent,
             scrimColor = Color(0x66000000),
         ) {
-            AiBottomSheet(analysis = analysis!!, stock = activeStock, onDismiss = { showSheet = false }, onViewReport = { openReport() })
+            // 返回键必须在弹层内容内注册：fork 的 BackPressHandler.dispatchOnBackEvent() 只执行
+            // 回调栈顶（最后注册）的一个，注册在弹层内才能抢在库 DialogContent 的 BackHandler 之前
+            // 命中（注册在页面外层则永远是死代码），再由 [closeSheet] 统一驱动「先动画、后摘节点」。
+            // 此版本的 BackHandler 没有 enabled 参数，只能靠条件组合来开关。
+            BackHandler {
+                closeSheet()
+            }
+            AiBottomSheet(
+                analysis = analysis!!,
+                stock = activeStock,
+                analyzing = analyzing,
+                onDismiss = { closeSheet() },
+                onViewReport = { openReport() },
+            )
         }
     }
 
@@ -344,6 +448,8 @@ fun WatchlistScreen() {
             containerColor = AppColors.PageBg,
             scrimColor = Color(0x66000000),
         ) {
+            // 同上：返回键注册在弹层内容内，才能先于库的 DialogContent 处理
+            BackHandler { showDimPicker = false }
             DimensionPickerSheet(
                 current = vm.dimension,
                 onSelect = { dim ->

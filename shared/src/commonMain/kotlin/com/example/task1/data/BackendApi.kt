@@ -106,7 +106,7 @@ private fun JSONObject.toStockItem(): StockItem? {
         amount = optLong("amount"),
         outer = optLong("outer"),
         inner = optLong("inner"),
-        industry = optString("industry").ifEmpty { "未分类" },
+        industry = optString("industry").ifEmpty { IndustryBook.UNCLASSIFIED },
         benchmarkDelta = nullableDouble("benchmarkDelta"),
         tags = optJSONArray("tags").toStringList(),
     )
@@ -136,7 +136,7 @@ private fun JSONObject.toAnalysis(): AiAnalysis? {
             momentum = f?.optInt("momentum") ?: 0,
             value = f?.optInt("value") ?: 0,
             risk = f?.optInt("risk") ?: 0,
-            industry = f?.optString("industry") ?: "未分类",
+            industry = f?.optString("industry") ?: IndustryBook.UNCLASSIFIED,
             industryRank = f?.optInt("industryRank") ?: -1,
             benchmarkDelta = f?.nullableDouble("benchmarkDelta"),
         ),

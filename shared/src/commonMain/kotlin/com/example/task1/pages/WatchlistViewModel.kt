@@ -6,15 +6,15 @@ import androidx.compose.runtime.setValue
 import com.example.task1.data.AiSummary
 import com.example.task1.data.DataSource
 import com.example.task1.data.GroupDimension
-import com.example.task1.data.MockBenchmark
+import com.example.task1.data.MarketOverview
 import com.example.task1.data.SampleStockApi
 import com.example.task1.data.StockApi
 import com.example.task1.data.StockGroup
 import com.example.task1.data.StockItem
 import com.example.task1.data.WatchlistBundle
-import com.example.task1.data.deriveBenchmarkDelta
 import com.example.task1.data.deriveSummary
-import com.example.task1.data.deriveTags
+import com.example.task1.data.deriveMarketOverview
+import com.example.task1.data.enrich
 import com.example.task1.data.groupStocks
 import com.tencent.kuikly.lifecycle.ViewModel
 import com.tencent.kuikly.lifecycle.viewModelScope
@@ -57,6 +57,13 @@ class WatchlistViewModel(
     val groups: List<StockGroup>
         get() = groupStocks(stocks, dimension)
 
+    /**
+     * 顶部大盘摘要：与列表**同源**（同一次拉取的 stocks 推导），下拉刷新后一起更新。
+     * 列表为空（首载未回）时给 null，由组件渲染占位，避免先把 0 当成真数据画出来。
+     */
+    val overview: MarketOverview?
+        get() = if (stocks.isEmpty()) null else deriveMarketOverview(stocks, fetchedAt)
+
     /** 触发一次加载（首次进入 / 点重试）。 */
     fun load(showThinking: Boolean = true) {
         viewModelScope.launch {
@@ -87,19 +94,12 @@ class WatchlistViewModel(
         else groups.joinToString("、") { g -> "${g.title.replace("股票建议", "")}${g.stocks.size}只" }
 
     /**
-     * 补全实时源缺失的派生字段:tags 与 benchmarkDelta。
-     *
-     * 只填「没有的」——自研后端已经算好行业/基准差/动态标签,若这里无条件覆盖,
-     * 后端(含 LLM)的产出会被本地规则悄悄顶掉,所以两个字段都按「已存在则保留」处理。
-     * summary 同理:后端给了摘要就不再用本地规则重算。
+     * 列表级补全:条目级字段(振幅/行业/基准差/标签)交给数据层的 [enrich]——
+     * 报告页/详情页读的是同一个函数,同一只票在两处必须给出同一份数值。
+     * 这里只负责列表级的 summary 兜底:后端给了摘要就不再用本地规则重算。
      */
-    private fun enrich(bundle: WatchlistBundle): WatchlistBundle {
-        val items = bundle.stocks.map { item ->
-            val delta = item.benchmarkDelta
-                ?: deriveBenchmarkDelta(item, MockBenchmark.changePctByMarket[MockBenchmark.of(item.code)])
-            val withDelta = item.copy(benchmarkDelta = delta)
-            withDelta.copy(tags = withDelta.tags.ifEmpty { deriveTags(withDelta) })
-        }
+    private fun enrichBundle(bundle: WatchlistBundle): WatchlistBundle {
+        val items = bundle.stocks.map { enrich(it) }
         val summary = bundle.summary.takeIf { it.text.isNotBlank() } ?: deriveSummary(items, bundle.fetchedAt)
         return bundle.copy(stocks = items, summary = summary)
     }
@@ -114,7 +114,7 @@ class WatchlistViewModel(
             // 真数据(自研后端 / 直连腾讯):直接用,诚信标注 missing
             bundle.source != DataSource.OFFLINE -> {
                 missingStock = bundle.missing
-                enrich(bundle)
+                enrichBundle(bundle)
             }
             // 只有离线样例可用:已持有真数据就沿用旧的并盖章 CACHE(角标会显示更新时间),
             // 否则首载即离线,直接接受样例

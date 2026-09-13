@@ -30,7 +30,7 @@ data class StockItem(
     val amount: Long = 0L,           // 成交额(元)
     val outer: Long = 0L,            // 外盘(手)
     val inner: Long = 0L,            // 内盘(手)
-    val industry: String = "未分类",
+    val industry: String = IndustryBook.UNCLASSIFIED,
     val benchmarkDelta: Double? = null, // 个股changePct − 指数changePct
     val tags: List<String> = emptyList(), // D2 动态标签
 )
@@ -50,7 +50,7 @@ data class AiFactors(
     val momentum: Int = 0,   // 动量分 0-60
     val value: Int = 0,      // 价值分 0-25
     val risk: Int = 0,       // 风险分 0-8
-    val industry: String = "未分类",
+    val industry: String = IndustryBook.UNCLASSIFIED,
     val industryRank: Int = -1,
     val benchmarkDelta: Double? = null,
 )
@@ -125,15 +125,13 @@ object SampleStockApi : StockApi {
 
     // 固定数据替身:作为「首载无缓存失败」的 OFFLINE 兜底;source 恒为 OFFLINE。
     override suspend fun fetchWatchlist(): WatchlistBundle {
-        val enriched = list.map { item ->
-            item.copy(benchmarkDelta = deriveBenchmarkDelta(item, MockBenchmark.changePctByMarket[MockBenchmark.of(item.code)]))
-                .let { it.copy(tags = deriveTags(it)) }
-        }
+        val enriched = list.map { enrich(it) }
         val now = nowMillis()
         return WatchlistBundle(enriched, now, DataSource.OFFLINE, summary = deriveSummary(enriched, now))
     }
 
-    override suspend fun fetchStock(code: String): StockItem? = list.find { it.code == code }
+    // 与列表页走同一个 enrich:否则同一只票在报告页会丢标签/振幅/行业(不一致的老毛病)
+    override suspend fun fetchStock(code: String): StockItem? = list.find { it.code == code }?.let { enrich(it) }
 
     override suspend fun fetchGlobalAdvice(): String = GLOBAL_ADVICE
 

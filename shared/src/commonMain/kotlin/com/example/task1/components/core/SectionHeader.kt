@@ -47,7 +47,7 @@ fun SectionHeader(
             Text(text = title, color = AppColors.MainText, fontSize = AppTypography.H3, fontWeight = FontWeight.SemiBold)
         }
         rightText?.let {
-            // æ²åºå¯¹é½ï¼å°å­æ ç­¾ä¸ H3 æ é¢åºçº¿ä¸è´ï¼ä¸åæ¬å¨åç©º
+            // 沉底对齐：小字标签与 H3 标题基线一致，不再悬在半空
             Text(
                 text = it,
                 color = rightTextColor,

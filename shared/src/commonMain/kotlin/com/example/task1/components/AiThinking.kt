@@ -23,6 +23,7 @@ import com.tencent.kuikly.compose.ui.Alignment
 import com.tencent.kuikly.compose.ui.Modifier
 import com.tencent.kuikly.compose.ui.draw.rotate
 import com.tencent.kuikly.compose.ui.draw.scale
+import com.tencent.kuikly.compose.ui.unit.Dp
 import com.tencent.kuikly.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 
@@ -48,6 +49,7 @@ val ThinkingPhrases = listOf(
 fun AiThinking(
     modifier: Modifier = Modifier,
     withBadge: Boolean = true,
+    verticalPadding: Dp = 24.dp,
 ) {
     var pulse by remember { mutableStateOf(false) }
     var phraseIndex by remember { mutableStateOf(0) }
@@ -85,7 +87,7 @@ fun AiThinking(
     )
 
     Column(
-        modifier = modifier.fillMaxWidth().padding(vertical = 24.dp),
+        modifier = modifier.fillMaxWidth().padding(vertical = verticalPadding),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         if (withBadge) {

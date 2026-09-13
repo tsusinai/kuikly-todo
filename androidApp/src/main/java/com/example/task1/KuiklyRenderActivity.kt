@@ -68,6 +68,14 @@ class KuiklyRenderActivity : AppCompatActivity(), KuiklyRenderViewBaseDelegatorD
         kuiklyRenderViewDelegator.onResume()
     }
 
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        if (!kuiklyRenderViewDelegator.onBackPressed()) {
+            @Suppress("DEPRECATION")
+            super.onBackPressed()
+        }
+    }
+
     override fun registerExternalModule(kuiklyRenderExport: IKuiklyRenderExport) {
         super.registerExternalModule(kuiklyRenderExport)
         with(kuiklyRenderExport) {

@@ -18,7 +18,7 @@ class RoutedStockApi(
 
     override suspend fun fetchWatchlist(): WatchlistBundle {
         if (backend != null) {
-            backend.watchlist()?.let { return it }
+            backend.watchlist()?.let { return it.withEnrichedItems() }
         }
         val liveBundle = live.fetchWatchlist()
         if (liveBundle.stocks.isNotEmpty()) return liveBundle
@@ -26,11 +26,12 @@ class RoutedStockApi(
     }
 
     override suspend fun fetchStock(code: String): StockItem? {
-        if (backend != null) {
-            backend.watchlist()?.stocks?.find { it.code == code }?.let { return it }
-        }
-        live.fetchStock(code)?.let { return it }
-        return fallback.fetchStock(code)
+        // 三级降级按「有没有找到这只票」串成一条链,找到即返回
+        val found = backend?.watchlist()?.stocks?.find { it.code == code }
+            ?: live.fetchStock(code)
+            ?: fallback.fetchStock(code)
+        // 出口统一补全:报告页/详情页与列表页读到的必须是同一份数值(见 enrich 的说明)
+        return found?.let { enrich(it) }
     }
 
     override suspend fun fetchAiAnalysis(code: String): AiAnalysis {
@@ -38,12 +39,20 @@ class RoutedStockApi(
             backend.analysis(code)?.let { return it }
         }
         // 后端不可用:在真实行情上用本地规则引擎推导,保证「报告页数值与行情一致」
-        live.fetchStock(code)?.let { return deriveAiAnalysis(it) }
+        live.fetchStock(code)?.let { return deriveAiAnalysis(enrich(it)) }
         return fallback.fetchAiAnalysis(code)
     }
 
     override suspend fun fetchGlobalAdvice(): String = fallback.fetchGlobalAdvice()
 }
+
+/**
+ * 后端契约目前不带 industry / benchmarkDelta / tags(见 [StockItem] 的字段说明),
+ * 直连腾讯那一层也补不全,所以走到页面前统一在同一处兜底——入口一处补齐,
+ * 好过让每个页面各自记得补。
+ */
+private fun WatchlistBundle.withEnrichedItems(): WatchlistBundle =
+    copy(stocks = stocks.map { enrich(it) })
 
 /** 走势数据源路由:后端不可用/无数据时回退样例走势,保证图表区恒有内容。 */
 class RoutedChartApi(
@@ -51,10 +60,11 @@ class RoutedChartApi(
     private val fallback: ChartApi = SampleChartApi,
 ) : ChartApi {
 
-    override suspend fun fetchChart(code: String, period: ChartPeriod): StockChartData {
+    override suspend fun fetchChart(code: String, period: ChartPeriod, quote: StockItem?): StockChartData {
         val live = backend?.chart(code, period)
         if (live != null && live.candles.isNotEmpty()) return live
-        return fallback.fetchChart(code, period)
+        // 兜底走势必须沿用页面正在显示的这份行情,否则同一页里会出现两个价位
+        return fallback.fetchChart(code, period, quote)
     }
 }
 

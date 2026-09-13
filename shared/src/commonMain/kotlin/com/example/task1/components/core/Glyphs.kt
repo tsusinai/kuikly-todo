@@ -31,3 +31,24 @@ fun ChevronBack(
         drawLine(color, elbow, Offset(size.width * 0.68f, size.height - half), stroke, StrokeCap.Round)
     }
 }
+
+/**
+ * 下向 chevron（折叠区开关箭头），Canvas 手绘。
+ *
+ * 与 [ChevronBack] 同一考虑：不依赖字体字符（`▾`/`▴` 在不同字体下大小与基线都不受控），
+ * 颜色由 [color] 决定，且能被外层 `rotate()` 连续旋转——收起指下、展开指上，中间态是转过去的。
+ */
+@Composable
+fun ChevronDown(
+    modifier: Modifier = Modifier,
+    color: Color = AppColors.SubGray,
+    strokeWidth: Dp = 1.8.dp,
+) {
+    Canvas(modifier = modifier) {
+        val stroke = strokeWidth.toPx()
+        val half = stroke / 2f
+        val elbow = Offset(size.width * 0.5f, size.height * 0.66f)
+        drawLine(color, Offset(half, size.height * 0.34f), elbow, stroke, StrokeCap.Round)
+        drawLine(color, elbow, Offset(size.width - half, size.height * 0.34f), stroke, StrokeCap.Round)
+    }
+}

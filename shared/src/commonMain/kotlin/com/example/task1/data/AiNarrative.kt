@@ -15,17 +15,18 @@ object AiNarrative {
 
     /**
      * 趋势叙事：把「趋势标签 + 信号 + 涨跌幅」拼成一句人话。
-     * 例：「贵州茅台今日涨 2.35%，近 5 日持续放量上行，MACD 已形成金叉；短期看涨信号明显。」
+     *
+     * 口径只说「今日」：信号原型只来自当日涨跌幅 + 市盈率，写成「近 5 日」是无依据的拔高。
+     * 例：「贵州茅台今日涨 2.35%，量价表现为 MACD 形成金叉；短期看涨信号明显。」
      */
     fun trend(item: StockItem, analysis: AiAnalysis): String {
-        val pct = Utils.formatPercent(item.changePct)
         val direction = when {
-            item.changePct > 0 -> "涨 $pct"
+            item.changePct > 0 -> "涨 ${Utils.formatPercent(item.changePct)}"
             item.changePct < 0 -> "跌 ${Utils.formatPercentNoSign(-item.changePct)}"
             else -> "平盘"
         }
         val signalDesc = signalToSentence(item.aiProfile.signal)
-        return "${item.name}今日$direction，近 5 日走势$signalDesc；${analysis.trendLabel}。"
+        return "${item.name}今日$direction，$signalDesc；${analysis.trendLabel}。"
     }
 
     /**
@@ -40,7 +41,8 @@ object AiNarrative {
             else -> "PE ${Utils.formatDouble2(item.pe)} 估值偏高"
         }
         val direction = if (item.changePct >= 0) "趋势向上" else "短期承压"
-        return "$volatility · $valuation · $direction"
+        // 结尾必须带句号：本函数结果会被报告页与其他段落首尾相接，缺标点会粘成「趋势向上综合建议：…」
+        return "$volatility · $valuation · $direction。"
     }
 
     /**
@@ -51,19 +53,32 @@ object AiNarrative {
         val target = Utils.formatPriceWhole(analysis.targetPrice)
         val stop = Utils.formatPriceWhole(analysis.stopLossPrice)
         
-        // 措施词随操作建议变化，避免「持股观望/建议回避」却写「可分批建仓」的矛盾
+        // 措施词随操作建议变化，避免「持股观望/建议回避」却写「可分批建仓」的矛盾；
+        // 同时不再复述操作建议本身——否则会读成「综合建议：持股观望。持股观望，目标价…」
         val plan = when {
-            action.contains("回避") -> "建议回避，暂不建仓"
-            action.contains("观望") -> "持股观望，目标价 $target，跌破 $stop 再评估"
+            action.contains("回避") -> "暂不建仓，等趋势明朗再看"
+            action.contains("观望") -> "目标价 $target，跌破 $stop 再评估"
             else -> "可分批建仓，目标价位 $target，止损位 $stop"
         }
         return "综合建议：$action（推荐指数 ${analysis.score}/100）。$plan。"
     }
 
+    /**
+     * 报告页「AI 总结」的三段叙事。
+     *
+     * 必须按段返回、由 UI 分行渲染：此前是把 trend/risk/buy 直接字符串相加，
+     * 段间没有分隔、risk 又没有句尾标点，读出来是一句黏连的长句。
+     */
+    fun summaryParagraphs(item: StockItem, analysis: AiAnalysis): List<String> = listOf(
+        trend(item, analysis),
+        risk(item, analysis),
+        buy(item, analysis),
+    )
+
     /** 信号字段 → 人话短语。 */
     private fun signalToSentence(signal: String): String = when (signal) {
         AiLabels.SIGNAL_VOLUME -> "量能持续放大"
-        AiLabels.SIGNAL_MACD -> "MACD 已形成金叉"
+        AiLabels.SIGNAL_MACD -> "MACD 形成金叉"
         AiLabels.SIGNAL_BOTTOM -> "低位逐步企稳"
         AiLabels.SIGNAL_OVERSOLD -> "超跌后出现反弹迹象"
         else -> "整体平稳"
@@ -82,7 +97,7 @@ data class ReasonStep(
  */
 fun buildReasoning(item: StockItem, analysis: AiAnalysis): List<ReasonStep> {
     val trendPoints = listOf(
-        "近 5 日涨跌幅 ${Utils.formatPercent(item.changePct)}，${if (item.changePct >= 0) "方向向上" else "方向向下"}",
+        "当日涨跌幅 ${Utils.formatPercent(item.changePct)}，${if (item.changePct >= 0) "方向向上" else "方向向下"}",
         "信号：${item.aiProfile.signal}（涨跌幅 ${Utils.formatPercent(item.changePct)}）",
         "趋势结论：${analysis.trendLabel}",
     )

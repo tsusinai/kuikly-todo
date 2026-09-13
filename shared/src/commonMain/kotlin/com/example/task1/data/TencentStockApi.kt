@@ -84,7 +84,9 @@ class TencentStockApi(
             val enabled = profile.score >= AiThresh.AI_ENABLED
             items.add(base.copy(aiEnabled = enabled, aiBrief = briefText(profile), aiProfile = profile))
         }
-        return WatchlistBundle(items, nowMillis(), DataSource.LIVE, missing = missing)
+        // 补全协议里没有的派生字段(振幅/行业/基准差/标签):腾讯 `~` 协议无这些位,
+        // 不补的话详情页与报告页会显示「振幅 0.00%」「行业 未分类」
+        return WatchlistBundle(items.map { enrich(it) }, nowMillis(), DataSource.LIVE, missing = missing)
     }
 
     override suspend fun fetchAiAnalysis(code: String): AiAnalysis {

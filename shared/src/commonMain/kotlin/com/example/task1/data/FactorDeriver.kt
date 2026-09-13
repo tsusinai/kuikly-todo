@@ -12,6 +12,51 @@ object FactorThresh {
 fun deriveBenchmarkDelta(item: StockItem, indexChangePct: Double?): Double? =
     indexChangePct?.let { item.changePct - it }
 
+/**
+ * 当日振幅 %：`(最高 − 最低) / 昨收`。
+ *
+ * 直连腾讯的降级路径没有振幅字段（[StockItem.amplitude] 恒为 0），报告页会显示
+ * 「振幅 0.00% 波动可控」这种废话——0 振幅被当成「波动可控」是假信息，不是缺信息。
+ * 三个输入（最高/最低/涨跌额）其实都已解析出来，昨收 = 现价 − 涨跌额 即可反推。
+ * 已有值（后端返回）时原样保留。
+ */
+fun deriveAmplitude(item: StockItem): Double {
+    if (item.amplitude > 0.0) return item.amplitude
+    val prevClose = item.price - item.change
+    if (prevClose <= 0L || item.high <= 0L || item.low <= 0L) return item.amplitude
+    return (item.high - item.low).toDouble() / prevClose * 100.0
+}
+
+/**
+ * 补全单个条目缺失的派生字段：振幅 → 行业 → 大盘基准差 → 动态标签。
+ *
+ * 为什么下沉到数据层：列表页、报告页、详情页走的是不同入口（fetchWatchlist / fetchStock），
+ * 此前补全只写在 WatchlistViewModel 里，于是同一只票在列表页挂着「强于大盘」标签、
+ * 报告页「强于大盘」却是「—」，报告页的振幅也是 0.00%——数据不一致的根因就在这里。
+ *
+ * 顺序有依赖：振幅要先补，[deriveTags] 的「振幅放大」才可能命中；
+ * 每个字段都是「已有值则保留」，后端（含 LLM）的产出不会被本地规则悄悄顶掉。
+ */
+fun enrich(item: StockItem): StockItem {
+    val withAmplitude = item.copy(amplitude = deriveAmplitude(item))
+    val withIndustry = if (withAmplitude.industry.isBlank() || withAmplitude.industry == IndustryBook.UNCLASSIFIED) {
+        withAmplitude.copy(industry = IndustryBook.of(withAmplitude.code) ?: withAmplitude.industry)
+    } else {
+        withAmplitude
+    }
+    val withDelta = if (withIndustry.benchmarkDelta == null) {
+        withIndustry.copy(
+            benchmarkDelta = deriveBenchmarkDelta(
+                withIndustry,
+                MockBenchmark.changePctByMarket[MockBenchmark.of(withIndustry.code)],
+            ),
+        )
+    } else {
+        withIndustry
+    }
+    return withDelta.copy(tags = withDelta.tags.ifEmpty { deriveTags(withDelta) })
+}
+
 /** D2 动态标签:纯函数,规则与后端逐条镜像;0 值字段自动不触发。 */
 fun deriveTags(item: StockItem): List<String> {
     val t = mutableListOf<String>()
