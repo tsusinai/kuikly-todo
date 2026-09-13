@@ -40,5 +40,3 @@ dependencyResolutionManagement {
 rootProject.name = "Task1"
 include(":androidApp")
 include(":shared")
-include(":h5App")
-include(":miniApp")

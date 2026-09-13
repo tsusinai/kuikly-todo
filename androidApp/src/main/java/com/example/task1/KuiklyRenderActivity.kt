@@ -38,7 +38,10 @@ class KuiklyRenderActivity : AppCompatActivity(), KuiklyRenderViewBaseDelegatorD
             return if (pn.isNotEmpty()) {
                 return pn
             } else {
-                "router"
+                // 冷启动（桌面点图标）的落地页 = 行情自选。
+                // 早期这里沿用 Kuikly 模板的 "router"，导致装机后直接看到的是示例「页面路由」调试页，
+                // 而不是本 App 的首页；"router" 仍可被显式指定，只是不再是入口。
+                "watchlist"
             }
         }
 
