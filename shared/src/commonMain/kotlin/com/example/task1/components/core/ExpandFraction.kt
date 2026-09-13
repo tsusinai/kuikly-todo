@@ -9,13 +9,17 @@ import com.tencent.kuikly.compose.ui.layout.Layout
 import com.tencent.kuikly.compose.ui.unit.Constraints
 
 /**
- * 变高内容的平滑展开/收起容器（Kuikly 专用通用原语）。
+ * 变高内容的平滑展开/收起容器（Kuikly 通用原语）。
  *
  * ## 为什么需要它
  *
- * Kuikly Compose 上 `animateContentSize` 不存在、`AnimatedVisibility`/`AnimatedContent`
- * 的过渡动画实测完全不动（详见项目记忆「Kuikly 动画铁律」）。本组件用 Kuikly 底层
- * `Layout(content, modifier, measurePolicy)` 实现可靠的变高展开：
+ * Kuikly Compose 本身有 `Modifier.animateContentSize`，也有 `AnimatedVisibility(expandVertically /
+ * shrinkVertically)`，但两者的形态都是「内容尺寸变了，动画自己跑」——**它们不接受一个外部进度**，
+ * 也无法被别的动画同步。而本项目有多处需要「多个区块共享同一个进度、严格同步收放」的场景
+ * （AI 抽屉三段结论、卡片的建议行与详情块），只能把进度握在自己手里。
+ *
+ * 本组件因此把「展开进度」做成**入参**：调用方用一路 `animateFloatAsState` 驱动，
+ * 想同步几块内容就喂同一个值；内部用 Kuikly 底层 `Layout(content, modifier, measurePolicy)` 实现：
  *
  *  1. 测量子内容时把 maxHeight 放宽到 [Constraints.Infinity]，拿到内容**自然高度** naturalH；
  *  2. 向父级报告的高度 = naturalH × [progress]，子内容顶部对齐原位放置，

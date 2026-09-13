@@ -46,9 +46,10 @@ import com.tencent.kuikly.compose.ui.unit.sp
  * [selected] 为 true 时卡片边框高亮，并平滑展开「详情块」（高/低/开 + 点击查看详情）；
  * 否则仅呈现紧凑态（TopRow [+ 重点股建议行]）。
  *
- * 收放动画由**单一进度值** [expand] 驱动（[ExpandableReveal]），**不要**换回
- * `AnimatedVisibility`/`expandVertically`：那套过渡在 Kuikly 上不逐帧执行，一整段收放会塌成
- * 一帧跳变——普通股收起时表现为「AI 提示词瞬间消失、下方行情瞬移补位」。
+ * 收放动画由**单一进度值** [expand] 驱动（[ExpandableReveal]），**不要**拆回
+ * `AnimatedVisibility`/`expandVertically`：那套 API 是自带动画的（尺寸变了它自己补间），
+ * 不接受外部进度；而这里「建议行」和「详情块」必须共享同一个进度才能同步收放，
+ * 否则普通股收起时会出现「AI 提示词瞬间消失、下方行情瞬移补位」。
  */
 @Composable
 fun StockCard(

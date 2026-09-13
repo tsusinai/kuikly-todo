@@ -78,8 +78,8 @@ fun aiConfidenceOf(analysis: AiAnalysis): Int {
 fun AiReasoning(item: StockItem, analysis: AiAnalysis, modifier: Modifier = Modifier) {
     var expanded by remember { mutableStateOf(false) }
     val steps = remember(item, analysis) { buildReasoning(item, analysis) }
-    // 展开必须由单一补间值驱动：AnimatedVisibility/expandVertically 的过渡在 Kuikly 上不逐帧执行
-    // （表现为「啪」地跳出来），ExpandableReveal + animateFloatAsState 才是本项目验证过的可靠路径
+    // 展开由单一补间值驱动：本组件只需要「展开/收起」这一条时间线，用 ExpandableReveal + 单路
+    // animateFloatAsState，进度的每一步都在我们手里，也和报告页各段共用的错峰节奏对得上。
     val p by animateFloatAsState(
         targetValue = if (expanded) 1f else 0f,
         animationSpec = tween(320, easing = FastOutSlowInEasing),

@@ -34,8 +34,8 @@ private const val APPEAR_MS = 300
  * [STAGGER_STEP_MS] 递延（封顶 [STAGGER_MAX_MS]），一批内容因此错峰涌现而不是同时蹦出来。
  *
  * 两处刻意的取舍：
- *  - 动画值走**值参数**（`alpha` / `offset(y = Dp)`），不用 `graphicsLayer{}` lambda ——
- *    Kuikly 上那个 lambda 不逐帧执行；
+ *  - 动画值走**值参数**（`alpha` / `offset(y = Dp)`），不用在 `graphicsLayer{}` lambda 里读动画状态 ——
+ *    后者是项目里实测过会「假死」（值停在首帧）的写法，值参数则每帧都跟着重组走；
  *  - 只做透明度和位移，**不做尺寸动画**：入场不该改变列表布局，否则相邻项会跟着一起抖。
  *
  * LazyColumn 里条目滚出可视区被回收、再滚回来时会重新入场一次。短列表观感正常（也算「滚动显现」），

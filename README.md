@@ -23,9 +23,9 @@
 > 规模：客户端业务代码 56 个 Kotlin 文件 / ~7.3k 行（全部在 `shared/commonMain`），
 > 后端 27 个文件 / ~2.2k 行，含 91 个单元测试。
 
-1. **主路径客户端零解析**——腾讯行情接口返回的是 `~` 分隔的 GBK 文本，字段散落在 40+ 个下标里
-   （且 A 股与港股市盈率还在不同下标）。这些脏活收在自研后端，App 只搬已经算好的字段；
-   客户端仅在「后端不可用、退回直连腾讯」这一级降级里保留一份等价解析。
+1. **主路径客户端零解析**——上游行情是 `~` 分隔的 GBK 文本，字段散落在几十个下标里。
+   这些脏活收在自研后端，App 只搬已经算好的字段；客户端仅在「后端不可用、退回直连」
+   这一级降级里保留一份等价解析。
 2. **数据源可降级**——自研后端 → 直连腾讯 → 本地样例，三级链路任意一级挂掉，页面都还能用，
    并且**明确告诉用户当前看到的是实时、缓存还是样例**。
 3. **AI 结论可解释**——不是甩一句「建议买入」，而是给出「评分 / 依据信号 / 因子明细 / 风险等级 /
@@ -66,49 +66,43 @@
 
 ## 四、架构
 
-```
-┌──────────────────────────── 客户端（Kuikly / Kotlin Multiplatform） ────────────────────────────┐
-│  shared/  ← 100% 业务代码都在这（commonMain），各端只是薄 host                                    │
-│                                                                                                 │
-│   pages/         WatchlistPage · StockDetailPage · AiReportPage                                 │
-│   components/    StockCard · AiBottomSheet · StockChart · DimensionPickerSheet …                │
-│   components/core/  跨页面复用的原语：ExpandableReveal · AppearIn · StateBox · StockChart …       │
-│   data/          StockApi · TencentStockApi · StockApis(降级链) · ChartApi · FactorDeriver …      │
-│   theme/         AppColors · AppTypography · AppShapes                                          │
-└────────────────────────────────────────────┬────────────────────────────────────────────────────┘
-                                             │ HTTP(JSON)
-┌────────────────────────────────────────────▼────────────────────────────────────────────────────┐
-│  backend/  自研后端（Kotlin + Ktor）— 解析 + 推导，独立 Gradle 工程                              │
-│   /watchlist            批量行情 → 契约 DTO（含 AI 画像）                                        │
-│   /analysis/{token}     单只标的完整分析                                                         │
-│   /chart/{token}        前复权 K 线 / 分时                                                       │
-│   /health                                                                                       │
-│                                                                                                 │
-│   QuoteParser(字段下标/单位换算/GBK) · AiEngine(规则引擎 ⟷ LLM 可插拔) · Routes                  │
-└────────────────────────────────────────────┬────────────────────────────────────────────────────┘
-                                             │
-                                    腾讯行情 / K 线接口
+```mermaid
+flowchart TD
+    subgraph Client["客户端 · Kuikly / Kotlin Multiplatform（业务代码 100% 在 shared/commonMain）"]
+        PG["pages/ · 自选 / 详情 / AI 报告"]
+        CP["components/ · StockCard · AiBottomSheet · StockChart …<br/>components/core/ · ExpandableReveal · AppearIn · StateBox"]
+        DT["data/ · StockApis 降级链 · ChartApi · FactorDeriver · AI 推导"]
+        PG --> CP --> DT
+    end
+
+    subgraph Backend["backend/ · 自研后端（Kotlin + Ktor，独立 Gradle 工程）"]
+        RT["Routes · /watchlist · /analysis/{token} · /chart/{token} · /health"]
+        SV["Service · 编排与契约装配"]
+        QP["QuoteParser · 字段解析 / 单位换算 / GBK"]
+        AI["AiEngine · 规则引擎 ⟷ LLM（可插拔）"]
+        RT --> SV
+        SV --> QP
+        SV --> AI
+    end
+
+    DT -->|"HTTP / JSON"| RT
+    QP --> UP["腾讯行情 / K 线接口"]
 ```
 
 ### 数据源降级链
 
-任何一次取数都走同一条链，**前一级失败自动落到下一级，并如实标注来源**：
+取数走降级链，**前一级失败自动落到下一级，并如实标注来源**。
+行情与走势的层级不同（走势没有「直连腾讯」这一级，后端不可用时直接用样例走势兜底，
+以免同一页里出现两个价位）：
 
-| 级别 | 来源 | UI 表现 |
+| 级别 | 行情 `/watchlist` `/analysis` | 走势 `/chart` |
 |---|---|---|
-| 1 | 自研后端 `/watchlist` `/analysis` `/chart` | 实时（无横幅） |
-| 2 | 直连腾讯 `qt.gtimg.cn` | 实时（无横幅） |
-| 3 | 本地样例数据 | 「实时行情暂不可用，展示示例数据（点此重试）」 |
+| 1 | 自研后端 | 自研后端 |
+| 2 | 直连腾讯 `qt.gtimg.cn` | —— |
+| 3 | 本地样例数据 | 本地样例数据（沿用当前行情，保证同页同价） |
 
 另有**缓存态**：已有数据时刷新失败，保留旧数据并把来源标成 `CACHE`，横幅显示
 「行情非实时（更新于 HH:mm:ss），点此重试」。
-
-### 单位与字段口径（踩过的坑）
-
-腾讯 `~` 协议里 `change(21)/changePct(22)/high(23)/low(24)` 是**买盘档位**、不是行情，
-真正的涨跌在 `32/33`、高低在 `34/35`；市盈率 A 股在 39、港股在 40。
-单位口径统一为「价格存分（元 ×100）、市值存元（亿 ×1e8）」：后端在解析时换一次，
-客户端的降级直连路径遵循同一口径，两端数值可直接对比。
 
 ---
 
@@ -117,13 +111,15 @@
 **一句话：规则引擎是骨架，LLM 是可选插件。**
 
 - **四维画像**：输出 `action`（操作建议）/ `signal`（依据信号）/ `score`（0–100）/ `scenario`（场景）。
-- **评分**：`50 基准 + 动量分(0–60) + 价值分(0–25) + 风险分(0–8)`，收敛到 0–100；
-  ≥80 标记为「值得重点关注」，≥85 / ≥70 再分「高分推荐」「中分观察」两档。
-- **三段叙事**：涨势分析 / 风险评估 / 买入建议，各自带目标价（现价 +8%）与止损价（现价 −5%）。
+- **评分**：以 50 分为基准，按动量 / 估值 / 风险三部分增减，收敛到 0–100；
+  ≥80 才算「值得重点关注」（决定卡片是否展示 AI 建议行），≥85 / 70–84 再分「高分推荐 / 中分观察」两档。
+- **三段叙事**：涨势分析 / 风险评估 / 买入建议，其中买入段给出目标价（现价 +8%）与止损价（现价 −5%）。
 - **因子明细**：动量分 / 价值分 / 风险分（**各自标出量程**——三因子不是同一把尺子，只写裸分数会被误读）、
   行业（含组内排名）、相对大盘强弱，逐项摊开，结论可追溯。
-- **LLM 缝**：`AiAnalysisProvider` 接口 + `RuleEngineAiProvider` / `LlmAiProvider` 两种实现。
-  后端 `AI_PROVIDER=llm` 且配好 `LLM_*` 就走真实大模型；**配置不全自动回落规则引擎，不会 500**。
+- **两道接缝**：画像走 `AiAnalysisProvider`（默认 `RuleEngineAiProvider` 规则引擎，与客户端逐字对齐；
+  `LlmAiProvider` 目前是**预留占位**，未接真实模型）；点评文案走 `SummaryProvider`，其中
+  `LlmSummaryProvider` 已实现 OpenAI 兼容的 `/chat/completions` 调用，配好 `LLM_BASE_URL` / `LLM_MODEL`
+  即生效，**未配置或调用失败一律回落规则文案，不会 5xx**。
 - **双端镜像**：客户端保有一份等价的推导实现（`deriveAiProfile` / `deriveAiAnalysis`），
   仅用于「本地先出」和离线兜底，且阈值常量与后端逐字对齐（`AiThresh` / `AiLabels`）。
 
@@ -138,7 +134,7 @@
 | JDK | **17**（AGP 8.x / Kotlin 2.1.x 要求；Gradle 会取 `JAVA_HOME` 或 PATH 上的 java） |
 | Gradle | 8.7（用仓库自带 wrapper，无需本机安装） |
 | Kotlin | 2.1.21 |
-| Kuikly | 2.7.0-2.1.21 |
+| Kuikly | 2.27.0-2.1.21 |
 | Android SDK | compileSdk 34 / minSdk 23（`androidApp`）、minSdk 21（`shared`）/ targetSdk 30 |
 
 > ⚠️ 仓库里的 `gradle.properties` **没有**写死 `org.gradle.java.home`。
@@ -199,29 +195,13 @@ Task1/
 ├── iosApp/                       # iOS host（SwiftUI + CocoaPods）
 ├── ohosApp/                      # 鸿蒙 host（ArkTS）
 ├── backend/                      # 自研后端（Kotlin + Ktor），独立 Gradle 工程
-├── static_server/                # 本地静态/代理服务（Koa，入口 static_server/serve/index.js）
 ├── docs/                         # 运行手册、设计规范、实现计划、重组分析
 └── rules/                        # Kuikly Compose / DSL 编码规范
 ```
 
 ---
 
-## 八、Kuikly 实践沉淀
-
-这部分是开发过程中**实测**出来的框架行为，已写成注释沉淀在对应代码里，供后来者少踩坑：
-
-| 现象 | 结论 |
-|---|---|
-| `AnimatedVisibility` / `expandVertically` | 过渡**不逐帧执行**，整段收放会塌成一帧跳变 → 改用 `ExpandableReveal` + 单路 `animateFloatAsState` |
-| `graphicsLayer { }` lambda | 同样不逐帧执行，动画值必须走**值参数**（`alpha()` / `offset(y = Dp)` / `rotate()`） |
-| Canvas | 无 `drawText` → 轴标签、刻度、信息条一律用 `Text` 叠加；无 `PathEffect` → 网格用浅色实线 |
-| `animateContentSize` | 不存在 → 用底层 `Layout` 手动测自然高度并按进度裁剪 |
-
-导入约定：**只有 `androidx.compose.runtime.*` 用官方包**，其余一律 `com.tencent.kuikly.compose.*`。
-
----
-
-## 九、文档索引
+## 八、文档索引
 
 | 文档 | 内容 |
 |---|---|
@@ -236,10 +216,10 @@ Task1/
 
 ---
 
-## 十、已知限制
+## 九、已知限制
 
 - **iOS / 鸿蒙未实机验证**：代码就绪但缺对应构建环境（macOS / DevEco 签名）。
 - **行情为演示用途**：数据来自公开行情接口，不构成任何投资建议；AI 结论由规则引擎推导，
   接入真实 LLM 后仍需人工复核。
-- **K 线为前复权**：暂不支持复权方式切换；图表暂不支持缩放与平移。
+- **图表暂不支持复权切换、缩放与平移**：固定按前复权请求。
 - **无本地持久化**：自选列表与分组维度未落盘，重启回到默认。
