@@ -124,7 +124,7 @@ $env:GRADLE_USER_HOME = "D:/gradle-user-home"
 | 各端怎么构建/运行、已知卡点 | `docs/runbook-platform.md` |
 | 编码规范（Compose DSL / DSL） | `AGENTS.md` · `rules/kuiklyComposeDSL.mdc` · `rules/kuiklyDSL.mdc` |
 | 接口字段契约（SSOT） | `docs/superpowers/specs/2026-08-30-watchlist-data-source-contract.md` |
-| 产品/设计意图 | `设计规范思路.md` · `figma_renders/` · `反馈.png` |
+| 产品/设计意图 | `设计规范思路.md` · `figma_renders/` |
 | 当前进度 / 恢复点 | `.superpowers/sdd/RESUME-ai-factors.md` |
 | 历史计划与规格 | `docs/superpowers/plans/` · `docs/superpowers/specs/` |
 | 后端自身说明 | `backend/README.md` · `backend/2026-08-30-backend-design.md` |
