@@ -14,6 +14,8 @@
 | ![自选行情](docs/images/watchlist.png) | ![股票详情](docs/images/stock-detail.png) | ![AI 智能分析](docs/images/ai-drawer.png) | ![完整分析报告](docs/images/ai-report.png) |
 | 大盘摘要 + 按维度分组的自选列表 | 周期 × 样式 × 指标可切的标准图表组件 | 长按股票呼出的分析智窗 | 三段叙事 + 因子明细 + 推理链 |
 
+> ▶️ **演示视频**：[kuikly-todo-demo.mp4](https://github.com/tsusinai/kuikly-todo/releases/download/v1.0.0/kuikly-todo-demo.mp4)（6.9 MB）
+
 ---
 
 ## 二、这是什么
